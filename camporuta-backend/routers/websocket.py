@@ -65,6 +65,7 @@ class ConnectionManager:
             "lat": float(data.get("lat", 0.0)),
             "lon": float(data.get("lon", 0.0)),
             "pdv_actual": str(data.get("pdv_actual", "")),
+            "bateria_actual": data.get("nivel_bateria") or data.get("bateria_actual"),
             "ultimo_update": datetime.now(timezone.utc),
             "timestamp_client": str(data.get("timestamp", "")),
             "estado": "activo"
@@ -78,6 +79,7 @@ class ConnectionManager:
                 id_reponedor=rid_int,
                 latitud=float(data.get("lat", 0.0)),
                 longitud=float(data.get("lon", 0.0)),
+                nivel_bateria=data.get("nivel_bateria") or data.get("bateria_actual"),
                 timestamp=datetime.utcnow()
             )
             db.add(pos)
@@ -86,6 +88,11 @@ class ConnectionManager:
             if perfil:
                 perfil.lat_actual = float(data.get("lat", 0.0))
                 perfil.lon_actual = float(data.get("lon", 0.0))
+                
+                bateria = data.get("nivel_bateria") or data.get("bateria_actual")
+                if bateria is not None:
+                    perfil.bateria_actual = bateria
+                    
                 perfil.online = True
                 perfil.ultima_conexion = datetime.utcnow()
                 db.add(perfil)
@@ -132,11 +139,12 @@ class ConnectionManager:
             })
             reponedores_payload.append({
                 "id": rid,
-                "lat": state["lat"],
-                "lon": state["lon"],
-                "estado": state["estado"],
-                "pdv_actual": state["pdv_actual"],
-                "ultimo_update": state["timestamp_client"] or "Nunca"
+                "lat": state.get("lat", 0.0),
+                "lon": state.get("lon", 0.0),
+                "estado": state.get("estado", "desconectado"),
+                "pdv_actual": state.get("pdv_actual", ""),
+                "bateria_actual": state.get("bateria_actual"),
+                "ultimo_update": state.get("timestamp_client") or "Nunca"
             })
         return {"reponedores": reponedores_payload}
 

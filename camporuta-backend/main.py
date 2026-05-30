@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import routers
-from routers import websocket, visitas, rutas, dashboard, roles, geografia, usuarios, catalogo, gestion, auth
+from routers import websocket, visitas, rutas, dashboard, roles, geografia, usuarios, catalogo, gestion, auth, gps
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +37,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router)
+app.include_router(gps.router)
 app.include_router(websocket.router)
 app.include_router(rutas.router)
 app.include_router(visitas.router)

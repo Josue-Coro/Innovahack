@@ -81,6 +81,7 @@ class PerfilReponedor(Base):
     lat_actual = Column(Numeric(10, 8))
     lon_actual = Column(Numeric(11, 8))
     online = Column(Boolean, default=False)
+    bateria_actual = Column(Integer)
     ultima_conexion = Column(DateTime)
     creado_en = Column(DateTime, default=datetime.utcnow)
     actualizado_en = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -292,6 +293,7 @@ class PosicionGPS(Base):
     longitud = Column(Float, nullable=False)
     precision_m = Column(Numeric(6, 1))
     velocidad_kmh = Column(Numeric(5, 1))
+    nivel_bateria = Column(Integer)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     reponedor = relationship("Usuario", foreign_keys=[id_reponedor])

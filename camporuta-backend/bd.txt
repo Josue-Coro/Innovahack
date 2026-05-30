@@ -1,0 +1,1058 @@
+-- ============================================================
+-- GRUPO VENADO — CampoRuta v3.0
+-- Base de datos PostgreSQL reestructurada
+-- ============================================================
+-- MEJORAS vs v2.0:
+--   • IDs descriptivos: id_usuario, id_rol, id_pdv, etc.
+--   • Tabla unificada «usuarios» con roles (admin/supervisor/reponedor)
+--   • Jerarquía geográfica: departamentos → ciudades → mercados
+--   • Soporte para TODO BOLIVIA (9 departamentos)
+--   • Tabla de sesiones para autenticación JWT
+--   • Tabla de auditoría (audit_log)
+--   • CHECK constraints para campos tipo enum
+--   • Timestamps de actualización (actualizado_en)
+--   • Campo atiende_domingo en PDVs
+--   • Dirección y nombre legible en PDVs
+-- ============================================================
+-- Tablas: 21  |  Vistas: 6  |  Índices: 20+
+-- ============================================================
+
+-- ============================================================
+-- EXTENSIONES
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- para gen_random_uuid()
+
+-- ============================================================
+-- ░░░ SECCIÓN 1: CONFIGURACIÓN Y GEOGRAFÍA ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 1.1  ROLES
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE roles (
+    id_rol        SERIAL PRIMARY KEY,
+    nombre        VARCHAR(30) UNIQUE NOT NULL,   -- admin, supervisor, reponedor
+    descripcion   TEXT,
+    permisos      JSONB DEFAULT '{}',            -- permisos granulares a futuro
+    activo        BOOLEAN DEFAULT TRUE,
+    creado_en     TIMESTAMP DEFAULT NOW()
+);
+
+-- ────────────────────────────────────────────────────────────
+-- 1.2  DEPARTAMENTOS (los 9 de Bolivia)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE departamentos (
+    id_departamento  SERIAL PRIMARY KEY,
+    nombre           VARCHAR(50) UNIQUE NOT NULL,
+    codigo_iso       VARCHAR(5),                  -- BO-L, BO-C, BO-S, etc.
+    capital          VARCHAR(80),
+    activo           BOOLEAN DEFAULT TRUE,
+    creado_en        TIMESTAMP DEFAULT NOW()
+);
+
+-- ────────────────────────────────────────────────────────────
+-- 1.3  CIUDADES
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE ciudades (
+    id_ciudad        SERIAL PRIMARY KEY,
+    id_departamento  INT NOT NULL REFERENCES departamentos(id_departamento),
+    nombre           VARCHAR(100) NOT NULL,
+    latitud_centro   DECIMAL(10,8),
+    longitud_centro  DECIMAL(11,8),
+    activo           BOOLEAN DEFAULT TRUE,
+    creado_en        TIMESTAMP DEFAULT NOW(),
+    UNIQUE(id_departamento, nombre)
+);
+
+CREATE INDEX idx_ciudades_depto ON ciudades(id_departamento);
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 2: USUARIOS Y AUTENTICACIÓN ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 2.1  USUARIOS  (unifica supervisores + reponedores + admin)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE usuarios (
+    id_usuario     SERIAL PRIMARY KEY,
+    id_rol         INT NOT NULL REFERENCES roles(id_rol),
+    id_ciudad      INT REFERENCES ciudades(id_ciudad),        -- ciudad donde opera
+
+    nombre         VARCHAR(100) NOT NULL,
+    email          VARCHAR(150) UNIQUE NOT NULL,
+    password_hash  VARCHAR(255) NOT NULL,
+    telefono       VARCHAR(20),
+    avatar_url     VARCHAR(500),
+
+    -- Jerarquía: un supervisor supervisa reponedores
+    id_supervisor  INT REFERENCES usuarios(id_usuario),       -- NULL para admin/supervisores
+
+    activo         BOOLEAN DEFAULT TRUE,
+    creado_en      TIMESTAMP DEFAULT NOW(),
+    actualizado_en TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_usuarios_rol        ON usuarios(id_rol);
+CREATE INDEX idx_usuarios_supervisor  ON usuarios(id_supervisor);
+CREATE INDEX idx_usuarios_ciudad      ON usuarios(id_ciudad);
+
+-- ────────────────────────────────────────────────────────────
+-- 2.2  PERFILES DE REPONEDOR  (datos específicos del rol)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE perfiles_reponedor (
+    id_perfil_reponedor       SERIAL PRIMARY KEY,
+    id_usuario                INT UNIQUE NOT NULL REFERENCES usuarios(id_usuario),
+
+    tipo_vehiculo             VARCHAR(30) DEFAULT 'a_pie'
+                              CHECK (tipo_vehiculo IN ('a_pie','moto','auto','bicicleta')),
+    capacidad_maxima_visitas_dia INT DEFAULT 15,
+
+    -- Estado en tiempo real
+    lat_actual                DECIMAL(10,8),
+    lon_actual                DECIMAL(11,8),
+    online                    BOOLEAN DEFAULT FALSE,
+    ultima_conexion           TIMESTAMP,
+
+    creado_en                 TIMESTAMP DEFAULT NOW(),
+    actualizado_en            TIMESTAMP DEFAULT NOW()
+);
+
+-- ────────────────────────────────────────────────────────────
+-- 2.3  SESIONES  (tokens JWT / refresh)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE sesiones (
+    id_sesion       SERIAL PRIMARY KEY,
+    id_usuario      INT NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+    token           VARCHAR(500) UNIQUE NOT NULL,
+    refresh_token   VARCHAR(500) UNIQUE,
+    dispositivo     VARCHAR(100),                -- 'web', 'android', 'ios'
+    ip_address      VARCHAR(45),
+    user_agent      TEXT,
+    expira_en       TIMESTAMP NOT NULL,
+    creado_en       TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_sesiones_usuario ON sesiones(id_usuario);
+CREATE INDEX idx_sesiones_expira  ON sesiones(expira_en);
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 3: CATÁLOGO ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 3.1  CATEGORÍAS DE CLIENTE
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE categorias_cliente (
+    id_categoria                SERIAL PRIMARY KEY,
+    nombre                      VARCHAR(50) UNIQUE NOT NULL,
+    criterio_clasificacion      VARCHAR(200),
+    tiempo_promedio_visita_min  INT,
+    perfil_atencion             TEXT,
+    activo                      BOOLEAN DEFAULT TRUE,
+    creado_en                   TIMESTAMP DEFAULT NOW()
+);
+
+-- ────────────────────────────────────────────────────────────
+-- 3.2  MERCADOS  (ahora vinculado a ciudad)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE mercados (
+    id_mercado    SERIAL PRIMARY KEY,
+    id_ciudad     INT NOT NULL REFERENCES ciudades(id_ciudad),
+    nombre        VARCHAR(100) NOT NULL,
+    direccion     VARCHAR(200),
+    latitud       DECIMAL(10,8),
+    longitud      DECIMAL(11,8),
+    activo        BOOLEAN DEFAULT TRUE,
+    creado_en     TIMESTAMP DEFAULT NOW(),
+    UNIQUE(id_ciudad, nombre)
+);
+
+CREATE INDEX idx_mercados_ciudad ON mercados(id_ciudad);
+
+-- ────────────────────────────────────────────────────────────
+-- 3.3  PUNTOS DE VENTA (PDV)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE puntos_de_venta (
+    id_pdv                 SERIAL PRIMARY KEY,
+    codigo_gv              VARCHAR(20) UNIQUE NOT NULL,
+    codigo_interno         VARCHAR(50),
+    nombre_pdv             VARCHAR(150),                      -- nombre legible del punto
+    direccion              VARCHAR(250),
+
+    id_mercado             INT REFERENCES mercados(id_mercado),
+    id_categoria           INT REFERENCES categorias_cliente(id_categoria),
+    id_supervisor          INT REFERENCES usuarios(id_usuario),
+    id_reponedor_asignado  INT REFERENCES usuarios(id_usuario),
+
+    latitud                DECIMAL(10,8) NOT NULL,
+    longitud               DECIMAL(11,8) NOT NULL,
+    tiempo_visita_min      INT NOT NULL,
+
+    prioridad              VARCHAR(10) DEFAULT 'media'
+                           CHECK (prioridad IN ('alta','media','baja')),
+    ventana_horaria_inicio TIME DEFAULT '08:00',
+    ventana_horaria_fin    TIME DEFAULT '18:00',
+
+    nombre_contacto        VARCHAR(100),
+    telefono_contacto      VARCHAR(20),
+    notas_especiales       TEXT,
+
+    -- Días de atención (incluye domingo)
+    atiende_lunes          BOOLEAN DEFAULT FALSE,
+    atiende_martes         BOOLEAN DEFAULT FALSE,
+    atiende_miercoles      BOOLEAN DEFAULT FALSE,
+    atiende_jueves         BOOLEAN DEFAULT FALSE,
+    atiende_viernes        BOOLEAN DEFAULT FALSE,
+    atiende_sabado         BOOLEAN DEFAULT FALSE,
+    atiende_domingo        BOOLEAN DEFAULT FALSE,
+
+    frecuencia_semanal     INT,
+    frecuencia_mensual     INT,
+
+    activo                 BOOLEAN DEFAULT TRUE,
+    creado_en              TIMESTAMP DEFAULT NOW(),
+    actualizado_en         TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_pdv_ubicacion    ON puntos_de_venta(latitud, longitud);
+CREATE INDEX idx_pdv_categoria    ON puntos_de_venta(id_categoria);
+CREATE INDEX idx_pdv_reponedor    ON puntos_de_venta(id_reponedor_asignado);
+CREATE INDEX idx_pdv_mercado      ON puntos_de_venta(id_mercado);
+CREATE INDEX idx_pdv_supervisor   ON puntos_de_venta(id_supervisor);
+
+-- ────────────────────────────────────────────────────────────
+-- 3.4  MICRO-TAREAS
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE micro_tareas (
+    id_micro_tarea  SERIAL PRIMARY KEY,
+    id_categoria    INT REFERENCES categorias_cliente(id_categoria),
+    nombre          VARCHAR(150) NOT NULL,
+    descripcion     TEXT,
+    orden           INT,
+    activo          BOOLEAN DEFAULT TRUE,
+    creado_en       TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_micro_tareas_cat ON micro_tareas(id_categoria);
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 4: OPERACIÓN DIARIA ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 4.1  RUTAS DEL DÍA
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE rutas (
+    id_ruta                SERIAL PRIMARY KEY,
+    id_reponedor           INT NOT NULL REFERENCES usuarios(id_usuario),
+    id_supervisor          INT REFERENCES usuarios(id_usuario),
+    fecha                  DATE NOT NULL,
+
+    estado                 VARCHAR(30) DEFAULT 'pendiente'
+                           CHECK (estado IN ('pendiente','en_curso','completada','cancelada')),
+
+    distancia_km_estimada  DECIMAL(8,2),
+    duracion_min_estimada  INT,
+    distancia_km_real      DECIMAL(8,2),
+    duracion_min_real      INT,
+
+    hora_inicio_real       TIMESTAMP,
+    hora_fin_real          TIMESTAMP,
+
+    creado_en              TIMESTAMP DEFAULT NOW(),
+    actualizado_en         TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(id_reponedor, fecha)
+);
+
+CREATE INDEX idx_rutas_reponedor ON rutas(id_reponedor);
+CREATE INDEX idx_rutas_fecha     ON rutas(fecha);
+CREATE INDEX idx_rutas_estado    ON rutas(estado);
+
+-- ────────────────────────────────────────────────────────────
+-- 4.2  PUNTOS DE RUTA (paradas ordenadas)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE ruta_puntos (
+    id_ruta_punto           SERIAL PRIMARY KEY,
+    id_ruta                 INT NOT NULL REFERENCES rutas(id_ruta) ON DELETE CASCADE,
+    id_pdv                  INT NOT NULL REFERENCES puntos_de_venta(id_pdv),
+    orden                   INT NOT NULL,
+    hora_estimada_llegada   TIME,
+
+    estado                  VARCHAR(30) DEFAULT 'pendiente'
+                            CHECK (estado IN ('pendiente','en_curso','completada','omitida'))
+);
+
+CREATE INDEX idx_ruta_puntos_ruta ON ruta_puntos(id_ruta);
+
+-- ────────────────────────────────────────────────────────────
+-- 4.3  VISITAS
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE visitas (
+    id_visita           SERIAL PRIMARY KEY,
+    id_ruta_punto       INT REFERENCES ruta_puntos(id_ruta_punto),
+    id_reponedor        INT NOT NULL REFERENCES usuarios(id_usuario),
+    id_pdv              INT NOT NULL REFERENCES puntos_de_venta(id_pdv),
+    fecha               DATE NOT NULL,
+
+    hora_llegada        TIMESTAMP,
+    hora_salida         TIMESTAMP,
+    duracion_real_min   INT GENERATED ALWAYS AS (
+                            EXTRACT(EPOCH FROM (hora_salida - hora_llegada)) / 60
+                        ) STORED,
+
+    estado              VARCHAR(30) DEFAULT 'pendiente'
+                        CHECK (estado IN ('pendiente','en_curso','completada','no_visitada')),
+
+    motivo_no_visita    VARCHAR(100)
+                        CHECK (motivo_no_visita IS NULL OR motivo_no_visita IN (
+                            'cerrado','sin_tiempo','acceso_bloqueado','reagendado','otro'
+                        )),
+
+    quiebre_de_stock    BOOLEAN DEFAULT FALSE,
+    clima_descripcion   VARCHAR(50),
+    temperatura_c       DECIMAL(4,1),
+    notas               TEXT,
+    foto_url            VARCHAR(500),
+
+    lat_registro        DECIMAL(10,8),
+    lon_registro        DECIMAL(11,8),
+
+    creado_en           TIMESTAMP DEFAULT NOW(),
+    actualizado_en      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_visitas_fecha      ON visitas(fecha);
+CREATE INDEX idx_visitas_reponedor  ON visitas(id_reponedor);
+CREATE INDEX idx_visitas_pdv        ON visitas(id_pdv);
+CREATE INDEX idx_visitas_estado     ON visitas(estado);
+
+-- ────────────────────────────────────────────────────────────
+-- 4.4  TAREAS POR VISITA
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE visita_tareas (
+    id_visita_tarea  SERIAL PRIMARY KEY,
+    id_visita        INT NOT NULL REFERENCES visitas(id_visita) ON DELETE CASCADE,
+    id_micro_tarea   INT NOT NULL REFERENCES micro_tareas(id_micro_tarea),
+    hora_inicio      TIMESTAMP,
+    hora_fin         TIMESTAMP,
+    duracion_min     INT GENERATED ALWAYS AS (
+                         EXTRACT(EPOCH FROM (hora_fin - hora_inicio)) / 60
+                     ) STORED,
+    completada       BOOLEAN DEFAULT FALSE,
+    notas            TEXT
+);
+
+CREATE INDEX idx_visita_tareas_visita ON visita_tareas(id_visita);
+
+-- ────────────────────────────────────────────────────────────
+-- 4.5  POSICIONES GPS EN TIEMPO REAL
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE posiciones_gps (
+    id_posicion   SERIAL PRIMARY KEY,
+    id_reponedor  INT NOT NULL REFERENCES usuarios(id_usuario),
+    latitud       DECIMAL(10,8) NOT NULL,
+    longitud      DECIMAL(11,8) NOT NULL,
+    precision_m   DECIMAL(6,1),                   -- precisión del GPS en metros
+    velocidad_kmh DECIMAL(5,1),                   -- velocidad del dispositivo
+    timestamp     TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_gps_reponedor ON posiciones_gps(id_reponedor);
+CREATE INDEX idx_gps_timestamp ON posiciones_gps(timestamp);
+
+-- Particionar por fecha en producción si el volumen crece:
+-- CREATE INDEX idx_gps_fecha ON posiciones_gps(DATE(timestamp));
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 5: GESTIÓN Y ANÁLISIS ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 5.1  INCIDENCIAS
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE incidencias (
+    id_incidencia   SERIAL PRIMARY KEY,
+    id_visita       INT REFERENCES visitas(id_visita),
+    id_reponedor    INT NOT NULL REFERENCES usuarios(id_usuario),
+    id_pdv          INT NOT NULL REFERENCES puntos_de_venta(id_pdv),
+
+    tipo            VARCHAR(50) NOT NULL
+                    CHECK (tipo IN (
+                        'quiebre_stock','cliente_cerrado','acceso_bloqueado',
+                        'producto_danado','problema_exhibidor','otro'
+                    )),
+    descripcion     TEXT,
+    foto_url        VARCHAR(500),
+    latitud         DECIMAL(10,8),
+    longitud        DECIMAL(11,8),
+
+    resuelta        BOOLEAN DEFAULT FALSE,
+    id_resuelto_por INT REFERENCES usuarios(id_usuario),   -- supervisor que resolvió
+    resuelta_en     TIMESTAMP,
+    notas_resolucion TEXT,
+
+    creado_en       TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_incidencias_tipo     ON incidencias(tipo);
+CREATE INDEX idx_incidencias_resuelta ON incidencias(resuelta);
+CREATE INDEX idx_incidencias_pdv      ON incidencias(id_pdv);
+
+-- ────────────────────────────────────────────────────────────
+-- 5.2  HISTORIAL DE TIEMPOS POR PDV  (datos para ML)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE historial_tiempos_pdv (
+    id_historial        SERIAL PRIMARY KEY,
+    id_pdv              INT NOT NULL REFERENCES puntos_de_venta(id_pdv),
+    id_categoria        INT REFERENCES categorias_cliente(id_categoria),
+    id_reponedor        INT NOT NULL REFERENCES usuarios(id_usuario),
+    fecha               DATE NOT NULL,
+    dia_semana          INT CHECK (dia_semana BETWEEN 1 AND 7),  -- 1=lun … 7=dom
+    tiempo_real_min     INT NOT NULL,
+    tiempo_estimado_min INT,
+    diferencia_min      INT GENERATED ALWAYS AS (tiempo_real_min - tiempo_estimado_min) STORED,
+    clima               VARCHAR(50),
+    habia_quiebre       BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX idx_historial_pdv       ON historial_tiempos_pdv(id_pdv);
+CREATE INDEX idx_historial_fecha     ON historial_tiempos_pdv(fecha);
+CREATE INDEX idx_historial_dia       ON historial_tiempos_pdv(dia_semana);
+CREATE INDEX idx_historial_categoria ON historial_tiempos_pdv(id_categoria);
+
+-- ────────────────────────────────────────────────────────────
+-- 5.3  REDISTRIBUCIONES SUGERIDAS
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE redistribuciones_sugeridas (
+    id_redistribucion      SERIAL PRIMARY KEY,
+    fecha_para             DATE NOT NULL,
+    id_reponedor_origen    INT REFERENCES usuarios(id_usuario),
+    id_reponedor_destino   INT REFERENCES usuarios(id_usuario),
+    id_pdv                 INT NOT NULL REFERENCES puntos_de_venta(id_pdv),
+
+    motivo                 VARCHAR(50)
+                           CHECK (motivo IN (
+                               'sobrecarga_tiempo','salto_geografico',
+                               'ausencia_reponedor','optimizacion','otro'
+                           )),
+    motivo_detalle         TEXT,
+    ahorro_tiempo_min      INT,
+    ahorro_km              DECIMAL(6,2),
+
+    estado                 VARCHAR(30) DEFAULT 'pendiente'
+                           CHECK (estado IN ('pendiente','aprobada','rechazada')),
+    id_aprobado_por        INT REFERENCES usuarios(id_usuario),
+    aprobada_en            TIMESTAMP,
+    motivo_rechazo         TEXT,
+
+    creado_en              TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_redistrib_fecha  ON redistribuciones_sugeridas(fecha_para);
+CREATE INDEX idx_redistrib_estado ON redistribuciones_sugeridas(estado);
+
+-- ────────────────────────────────────────────────────────────
+-- 5.4  KPIs DIARIOS
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE kpis_diarios (
+    id_kpi                       SERIAL PRIMARY KEY,
+    fecha                        DATE NOT NULL,
+    id_reponedor                 INT NOT NULL REFERENCES usuarios(id_usuario),
+    id_supervisor                INT REFERENCES usuarios(id_usuario),
+
+    -- Cobertura
+    total_pdvs_asignados         INT DEFAULT 0,
+    total_pdvs_visitados         INT DEFAULT 0,
+    total_pdvs_omitidos          INT DEFAULT 0,
+    porcentaje_cobertura         DECIMAL(5,2) GENERATED ALWAYS AS (
+                                     CASE WHEN total_pdvs_asignados > 0
+                                     THEN ROUND(total_pdvs_visitados * 100.0 / total_pdvs_asignados, 2)
+                                     ELSE 0 END
+                                 ) STORED,
+
+    -- Tiempos
+    tiempo_total_campo_min       INT DEFAULT 0,
+    tiempo_total_traslado_min    INT DEFAULT 0,
+    tiempo_total_atencion_min    INT DEFAULT 0,
+
+    -- Distancia
+    distancia_planificada_km     DECIMAL(8,2),
+    distancia_real_km            DECIMAL(8,2),
+
+    -- Calidad
+    quiebres_stock_encontrados   INT DEFAULT 0,
+    incidencias_reportadas       INT DEFAULT 0,
+    fotos_tomadas                INT DEFAULT 0,
+
+    -- Eficiencia vs plan
+    desviacion_tiempo_min        INT,
+    desviacion_km                DECIMAL(6,2),
+
+    creado_en                    TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(id_reponedor, fecha)
+);
+
+CREATE INDEX idx_kpis_fecha       ON kpis_diarios(fecha);
+CREATE INDEX idx_kpis_reponedor   ON kpis_diarios(id_reponedor);
+CREATE INDEX idx_kpis_supervisor  ON kpis_diarios(id_supervisor);
+
+-- ────────────────────────────────────────────────────────────
+-- 5.5  NOTIFICACIONES
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE notificaciones (
+    id_notificacion  SERIAL PRIMARY KEY,
+    id_supervisor    INT REFERENCES usuarios(id_usuario),
+    id_reponedor     INT REFERENCES usuarios(id_usuario),
+    id_pdv           INT REFERENCES puntos_de_venta(id_pdv),
+
+    tipo             VARCHAR(50) NOT NULL
+                     CHECK (tipo IN (
+                         'retraso','sin_movimiento','pdv_omitido','quiebre_stock',
+                         'incidencia','ruta_completada','redistribucion_pendiente','sistema'
+                     )),
+    mensaje          TEXT NOT NULL,
+    urgencia         VARCHAR(20) DEFAULT 'normal'
+                     CHECK (urgencia IN ('baja','normal','alta','critica')),
+
+    leida            BOOLEAN DEFAULT FALSE,
+    leida_en         TIMESTAMP,
+    creado_en        TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_notif_supervisor ON notificaciones(id_supervisor);
+CREATE INDEX idx_notif_leida      ON notificaciones(leida);
+CREATE INDEX idx_notif_urgencia   ON notificaciones(urgencia);
+CREATE INDEX idx_notif_creado     ON notificaciones(creado_en DESC);
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 6: AUDITORÍA ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 6.1  LOG DE AUDITORÍA  (quién hizo qué y cuándo)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE audit_log (
+    id_audit         SERIAL PRIMARY KEY,
+    id_usuario       INT REFERENCES usuarios(id_usuario),
+    accion           VARCHAR(20) NOT NULL
+                     CHECK (accion IN ('INSERT','UPDATE','DELETE','LOGIN','LOGOUT')),
+    tabla_afectada   VARCHAR(100),
+    registro_id      INT,
+    datos_anteriores JSONB,
+    datos_nuevos     JSONB,
+    ip_address       VARCHAR(45),
+    creado_en        TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_usuario  ON audit_log(id_usuario);
+CREATE INDEX idx_audit_tabla    ON audit_log(tabla_afectada);
+CREATE INDEX idx_audit_fecha    ON audit_log(creado_en DESC);
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 7: VISTAS ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 7.1  PDVs con toda la información contextual
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_pdvs_completo AS
+SELECT
+    p.id_pdv,
+    p.codigo_gv,
+    p.codigo_interno,
+    p.nombre_pdv,
+    p.direccion,
+    m.nombre          AS mercado,
+    c.nombre          AS ciudad,
+    d.nombre          AS departamento,
+    cat.nombre        AS categoria,
+    p.prioridad,
+    p.latitud,
+    p.longitud,
+    p.tiempo_visita_min,
+    p.ventana_horaria_inicio,
+    p.ventana_horaria_fin,
+    sup.nombre        AS supervisor,
+    rep.nombre        AS reponedor,
+    p.atiende_lunes, p.atiende_martes, p.atiende_miercoles,
+    p.atiende_jueves, p.atiende_viernes, p.atiende_sabado,
+    p.atiende_domingo,
+    p.frecuencia_semanal,
+    p.frecuencia_mensual,
+    p.notas_especiales
+FROM puntos_de_venta p
+JOIN mercados m             ON p.id_mercado   = m.id_mercado
+JOIN ciudades c             ON m.id_ciudad    = c.id_ciudad
+JOIN departamentos d        ON c.id_departamento = d.id_departamento
+JOIN categorias_cliente cat ON p.id_categoria = cat.id_categoria
+LEFT JOIN usuarios sup      ON p.id_supervisor = sup.id_usuario
+LEFT JOIN usuarios rep      ON p.id_reponedor_asignado = rep.id_usuario
+WHERE p.activo = TRUE;
+
+-- ────────────────────────────────────────────────────────────
+-- 7.2  Cobertura diaria por reponedor
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_cobertura_diaria AS
+SELECT
+    u.nombre AS reponedor,
+    ru.fecha,
+    COUNT(rp.id_ruta_punto)                                          AS total_puntos,
+    COUNT(CASE WHEN rp.estado = 'completada' THEN 1 END)            AS completados,
+    COUNT(CASE WHEN rp.estado = 'pendiente'  THEN 1 END)            AS pendientes,
+    COUNT(CASE WHEN rp.estado = 'omitida'    THEN 1 END)            AS omitidos,
+    ROUND(
+        COUNT(CASE WHEN rp.estado = 'completada' THEN 1 END) * 100.0
+        / NULLIF(COUNT(rp.id_ruta_punto), 0), 1
+    ) AS porcentaje_cobertura
+FROM rutas ru
+JOIN usuarios u       ON ru.id_reponedor = u.id_usuario
+JOIN ruta_puntos rp   ON ru.id_ruta      = rp.id_ruta
+GROUP BY u.nombre, ru.fecha;
+
+-- ────────────────────────────────────────────────────────────
+-- 7.3  Tiempos reales vs estimados por categoría y día
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_tiempos_reales_categoria AS
+SELECT
+    cat.nombre AS categoria,
+    h.dia_semana,
+    ROUND(AVG(h.tiempo_real_min), 1)      AS tiempo_promedio_real,
+    ROUND(AVG(h.tiempo_estimado_min), 1)  AS tiempo_promedio_estimado,
+    ROUND(AVG(h.diferencia_min), 1)       AS desviacion_promedio,
+    COUNT(h.id_historial)                 AS total_registros
+FROM historial_tiempos_pdv h
+JOIN categorias_cliente cat ON h.id_categoria = cat.id_categoria
+GROUP BY cat.nombre, h.dia_semana
+ORDER BY cat.nombre, h.dia_semana;
+
+-- ────────────────────────────────────────────────────────────
+-- 7.4  Incidencias abiertas con tiempo transcurrido
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_incidencias_abiertas AS
+SELECT
+    i.id_incidencia,
+    i.tipo,
+    i.descripcion,
+    p.codigo_gv,
+    m.nombre AS mercado,
+    c.nombre AS ciudad,
+    d.nombre AS departamento,
+    u.nombre AS reponedor,
+    i.creado_en,
+    ROUND(EXTRACT(EPOCH FROM (NOW() - i.creado_en)) / 3600, 1) AS horas_abiertas
+FROM incidencias i
+JOIN puntos_de_venta p  ON i.id_pdv       = p.id_pdv
+JOIN mercados m         ON p.id_mercado   = m.id_mercado
+JOIN ciudades c         ON m.id_ciudad    = c.id_ciudad
+JOIN departamentos d    ON c.id_departamento = d.id_departamento
+JOIN usuarios u         ON i.id_reponedor = u.id_usuario
+WHERE i.resuelta = FALSE
+ORDER BY i.creado_en ASC;
+
+-- ────────────────────────────────────────────────────────────
+-- 7.5  Ranking de reponedores por eficiencia
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_ranking_reponedores AS
+SELECT
+    u.nombre AS reponedor,
+    c.nombre AS ciudad,
+    COUNT(k.id_kpi)                                AS dias_registrados,
+    ROUND(AVG(k.porcentaje_cobertura), 1)          AS cobertura_promedio,
+    ROUND(AVG(k.distancia_real_km), 1)             AS km_promedio_dia,
+    SUM(k.quiebres_stock_encontrados)              AS total_quiebres,
+    SUM(k.incidencias_reportadas)                  AS total_incidencias,
+    ROUND(AVG(k.desviacion_tiempo_min), 0)         AS desviacion_tiempo_promedio
+FROM kpis_diarios k
+JOIN usuarios u      ON k.id_reponedor = u.id_usuario
+LEFT JOIN ciudades c ON u.id_ciudad    = c.id_ciudad
+GROUP BY u.nombre, c.nombre
+ORDER BY cobertura_promedio DESC;
+
+-- ────────────────────────────────────────────────────────────
+-- 7.6  NUEVA: Resumen operativo por departamento
+-- ────────────────────────────────────────────────────────────
+CREATE VIEW v_resumen_departamento AS
+SELECT
+    d.nombre AS departamento,
+    COUNT(DISTINCT p.id_pdv)                       AS total_pdvs,
+    COUNT(DISTINCT p.id_reponedor_asignado)        AS total_reponedores,
+    COUNT(DISTINCT m.id_mercado)                   AS total_mercados,
+    COUNT(DISTINCT c.id_ciudad)                    AS total_ciudades
+FROM departamentos d
+LEFT JOIN ciudades c           ON d.id_departamento = c.id_departamento
+LEFT JOIN mercados m           ON c.id_ciudad       = m.id_ciudad
+LEFT JOIN puntos_de_venta p    ON m.id_mercado      = p.id_mercado AND p.activo = TRUE
+GROUP BY d.nombre
+ORDER BY total_pdvs DESC;
+
+
+-- ============================================================
+-- ░░░ SECCIÓN 8: DATOS SEMILLA ░░░
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- 8.1  ROLES
+-- ────────────────────────────────────────────────────────────
+INSERT INTO roles (nombre, descripcion) VALUES
+('admin',       'Administrador del sistema con acceso total'),
+('supervisor',  'Supervisa reponedores, aprueba redistribuciones, resuelve incidencias'),
+('reponedor',   'Ejecuta rutas, registra visitas, reporta incidencias en campo');
+
+-- ────────────────────────────────────────────────────────────
+-- 8.2  DEPARTAMENTOS DE BOLIVIA
+-- ────────────────────────────────────────────────────────────
+INSERT INTO departamentos (nombre, codigo_iso, capital) VALUES
+('La Paz',       'BO-L', 'Nuestra Señora de La Paz'),
+('Cochabamba',   'BO-C', 'Cochabamba'),
+('Santa Cruz',   'BO-S', 'Santa Cruz de la Sierra'),
+('Oruro',        'BO-O', 'Oruro'),
+('Potosí',       'BO-P', 'Potosí'),
+('Tarija',       'BO-T', 'Tarija'),
+('Chuquisaca',   'BO-H', 'Sucre'),
+('Beni',         'BO-B', 'Trinidad'),
+('Pando',        'BO-N', 'Cobija');
+
+-- ────────────────────────────────────────────────────────────
+-- 8.3  CIUDADES PRINCIPALES POR DEPARTAMENTO
+-- ────────────────────────────────────────────────────────────
+INSERT INTO ciudades (id_departamento, nombre, latitud_centro, longitud_centro) VALUES
+-- La Paz (id_departamento = 1)
+(1, 'La Paz',       -16.50000000, -68.15000000),
+(1, 'El Alto',      -16.50944444, -68.19055556),
+(1, 'Viacha',       -16.65000000, -68.30000000),
+(1, 'Copacabana',   -16.16666667, -69.08333333),
+-- Cochabamba (id_departamento = 2)
+(2, 'Cochabamba',   -17.39389000, -66.15694000),
+(2, 'Quillacollo',  -17.39250000, -66.28028000),
+(2, 'Sacaba',       -17.40167000, -66.03833000),
+(2, 'Tiquipaya',    -17.33750000, -66.21667000),
+-- Santa Cruz (id_departamento = 3)
+(3, 'Santa Cruz de la Sierra', -17.78333333, -63.18194444),
+(3, 'Montero',      -17.33888889, -63.25055556),
+(3, 'Warnes',       -17.51388889, -63.16805556),
+(3, 'La Guardia',   -17.88333333, -63.33333333),
+-- Oruro (id_departamento = 4)
+(4, 'Oruro',        -17.96250000, -67.11500000),
+(4, 'Huanuni',      -18.28333333, -66.83333333),
+-- Potosí (id_departamento = 5)
+(5, 'Potosí',       -19.58888889, -65.75333333),
+(5, 'Llallagua',    -18.41666667, -66.58333333),
+(5, 'Villazón',     -22.08333333, -65.72222222),
+-- Tarija (id_departamento = 6)
+(6, 'Tarija',       -21.53549000, -64.72956000),
+(6, 'Yacuiba',      -22.01666667, -63.68333333),
+(6, 'Bermejo',      -22.73333333, -64.33333333),
+-- Chuquisaca (id_departamento = 7)
+(7, 'Sucre',        -19.04472222, -65.25972222),
+(7, 'Monteagudo',   -19.80000000, -63.95000000),
+-- Beni (id_departamento = 8)
+(8, 'Trinidad',     -14.83416667, -64.90138889),
+(8, 'Riberalta',    -11.00638889, -66.06611111),
+(8, 'Guayaramerín', -10.82638889, -65.35583333),
+-- Pando (id_departamento = 9)
+(9, 'Cobija',       -11.02666667, -68.76916667);
+
+-- ────────────────────────────────────────────────────────────
+-- 8.4  CATEGORÍAS DE CLIENTE
+-- ────────────────────────────────────────────────────────────
+INSERT INTO categorias_cliente (nombre, criterio_clasificacion, tiempo_promedio_visita_min, perfil_atencion) VALUES
+('MAYORISTA',  'Más de Bs. 50,000 de compra', 28, 'Gestión intermedia; enfoque en volumen y rotación.'),
+('MINORISTA',  'Más de Bs. 5,000 de compra',  23, 'Foco en capilaridad y orden de estantería básico.'),
+('DETALLISTA', 'Más de Bs. 70 de compra',     14, 'Visitas rápidas de reposición puntual.');
+
+-- ────────────────────────────────────────────────────────────
+-- 8.5  USUARIOS — Supervisores  (id_usuario 1-3, id_rol=2)
+-- ────────────────────────────────────────────────────────────
+INSERT INTO usuarios (id_rol, id_ciudad, nombre, email, password_hash) VALUES
+(2, 1, 'Supervisor 1', 'supervisor1@venado.bo', '$2b$10$placeholder_hash_1'),
+(2, 1, 'Supervisor 2', 'supervisor2@venado.bo', '$2b$10$placeholder_hash_2'),
+(2, 1, 'Supervisor 3', 'supervisor3@venado.bo', '$2b$10$placeholder_hash_3');
+
+-- ────────────────────────────────────────────────────────────
+-- 8.6  USUARIOS — Reponedores  (id_usuario 4-27, id_rol=3)
+--      id_supervisor referencia al usuario supervisor
+-- ────────────────────────────────────────────────────────────
+INSERT INTO usuarios (id_rol, id_ciudad, nombre, email, password_hash, id_supervisor) VALUES
+(3, 1, 'Reponedor 1',       'reponedor1@venado.bo',      '$2b$10$placeholder', 1),
+(3, 1, 'Reponedor 2',       'reponedor2@venado.bo',      '$2b$10$placeholder', 1),
+(3, 1, 'Reponedor 3',       'reponedor3@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 4',       'reponedor4@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 5',       'reponedor5@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 6',       'reponedor6@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 7',       'reponedor7@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 8',       'reponedor8@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 8 Apoyo', 'reponedor8apoyo@venado.bo', '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 9',       'reponedor9@venado.bo',      '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 10',      'reponedor10@venado.bo',     '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 11',      'reponedor11@venado.bo',     '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 12',      'reponedor12@venado.bo',     '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 13',      'reponedor13@venado.bo',     '$2b$10$placeholder', 2),
+(3, 1, 'Reponedor 14',      'reponedor14@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 15',      'reponedor15@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 16',      'reponedor16@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 17',      'reponedor17@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 18',      'reponedor18@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 19',      'reponedor19@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 20',      'reponedor20@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 21',      'reponedor21@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 22',      'reponedor22@venado.bo',     '$2b$10$placeholder', 3),
+(3, 1, 'Reponedor 23',      'reponedor23@venado.bo',     '$2b$10$placeholder', 3);
+
+-- ────────────────────────────────────────────────────────────
+-- 8.7  PERFILES DE REPONEDOR
+--      id_usuario 4-27 corresponden a los reponedores
+-- ────────────────────────────────────────────────────────────
+INSERT INTO perfiles_reponedor (id_usuario, tipo_vehiculo, capacidad_maxima_visitas_dia) VALUES
+( 4, 'a_pie', 15),  -- Reponedor 1
+( 5, 'a_pie', 15),  -- Reponedor 2
+( 6, 'a_pie', 15),  -- Reponedor 3
+( 7, 'a_pie', 15),  -- Reponedor 4
+( 8, 'a_pie', 15),  -- Reponedor 5
+( 9, 'a_pie', 15),  -- Reponedor 6
+(10, 'a_pie', 15),  -- Reponedor 7
+(11, 'a_pie', 15),  -- Reponedor 8
+(12, 'a_pie', 10),  -- Reponedor 8 Apoyo (capacidad reducida)
+(13, 'a_pie', 15),  -- Reponedor 9
+(14, 'a_pie', 15),  -- Reponedor 10
+(15, 'a_pie', 15),  -- Reponedor 11
+(16, 'a_pie', 15),  -- Reponedor 12
+(17, 'a_pie', 15),  -- Reponedor 13
+(18, 'a_pie', 15),  -- Reponedor 14
+(19, 'a_pie', 15),  -- Reponedor 15
+(20, 'a_pie', 15),  -- Reponedor 16
+(21, 'a_pie', 15),  -- Reponedor 17
+(22, 'a_pie', 15),  -- Reponedor 18
+(23, 'a_pie', 15),  -- Reponedor 19
+(24, 'a_pie', 15),  -- Reponedor 20
+(25, 'a_pie', 15),  -- Reponedor 21
+(26, 'a_pie', 15),  -- Reponedor 22
+(27, 'a_pie', 15);  -- Reponedor 23
+
+-- ────────────────────────────────────────────────────────────
+-- 8.8  MERCADOS  (ahora vinculados a La Paz, id_ciudad=1)
+-- ────────────────────────────────────────────────────────────
+INSERT INTO mercados (id_ciudad, nombre) VALUES
+(1,'CHASQUIPAMPA'),   (1,'ALTO PAMPAHASI'), (1,'10 DE ENERO'),
+(1,'SAN ANTONIO'),    (1,'KOLLASUYO'),      (1,'CRUCE DE VILLAS'),
+(1,'VILLA ARMONIA'),  (1,'ACHIMANI'),       (1,'LOS PINOS'),
+(1,'IRPAVI'),         (1,'OVEJUYO'),        (1,'YUNGAS'),
+(1,'MIRAFLORES'),     (1,'VILLA EL CARMEN'),(1,'OBRAJES'),
+(1,'ALTO OBRAJES'),   (1,'STRONGEST'),      (1,'BOLIVAR'),
+(1,'VITA'),           (1,'OBELISCO'),       (1,'ARCE'),
+(1,'SOPOCACHI'),      (1,'HINOJOSA'),       (1,'CAMACHO'),
+(1,'ACHACHICALA'),    (1,'LANZA'),          (1,'SAN JOSE'),
+(1,'RODRIGUEZ'),      (1,'VILLA FATIMA'),   (1,'GARCILASO'),
+(1,'TEJAR');
+
+-- ────────────────────────────────────────────────────────────
+-- 8.9  PUNTOS DE VENTA
+--      NOTA: id_supervisor se mantiene 1-3 (usuarios 1-3)
+--            id_reponedor_asignado = original+3
+--              original 1 → 4,  original 2 → 5
+-- ────────────────────────────────────────────────────────────
+INSERT INTO puntos_de_venta
+(codigo_gv, codigo_interno, id_mercado, id_categoria,
+ latitud, longitud, tiempo_visita_min,
+ id_supervisor, id_reponedor_asignado,
+ prioridad, ventana_horaria_inicio, ventana_horaria_fin,
+ atiende_lunes, atiende_martes, atiende_miercoles,
+ atiende_jueves, atiende_viernes, atiende_sabado, atiende_domingo,
+ frecuencia_semanal, frecuencia_mensual)
+VALUES
+('GV001','111886', 1,2,-16.53678674,-68.04696858,40, 1, 4,'alta', '08:00','17:00', TRUE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  2,8),
+('GV002','29849',  1,2,-16.5360361, -68.0458746, 30, 1, 4,'media','08:00','18:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV003','121652', 1,2,-16.5372816, -68.0481013, 20, 1, 4,'media','08:00','18:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV004','121652', 1,2,-16.5374663, -68.0485621, 20, 1, 4,'media','08:00','18:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV005','39702',  1,2,-16.5371804, -68.0481663, 40, 1, 4,'media','08:00','18:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV006','75182',  1,2,-16.537521,  -68.0482,    15, 1, 4,'baja', '09:00','17:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV007','82768',  1,2,-16.5374514, -68.0484989, 20, 1, 4,'media','08:00','18:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV008','130051', 1,2,-16.5377087, -68.0500336, 10, 1, 4,'baja', '09:00','17:00', TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV009','109861', 2,2,-16.49544574,-68.1034628, 20, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV010','38180',  2,2,-16.4954428, -68.1020593, 25, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV011','82728',  3,2,-16.5019009, -68.1046631, 25, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV012','99137',  3,2,-16.5017024, -68.1042295, 25, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV013','111538', 3,2,-16.50172437,-68.10421574,20, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV014','101854', 3,2,-16.5019859, -68.1037724, 70, 1, 4,'alta', '08:00','10:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV015','74076',  3,2,-16.5008563, -68.1053203, 30, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV016','35915',  4,2,-16.4979223, -68.1085645, 25, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV017','66479',  4,2,-16.4980489, -68.1085043, 30, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV018','92826',  4,2,-16.49849299,-68.10847317,60, 1, 4,'alta', '08:00','12:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV019','38275',  4,2,-16.497745,  -68.1086738, 35, 1, 4,'media','08:00','18:00', FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV020','75088',  5,2,-16.4952836, -68.116675,  30, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV021','55137',  5,2,-16.4952047, -68.1166545, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV022','51600',  5,2,-16.4952851, -68.1166793, 38, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV023','13131',  5,2,-16.4955112, -68.1168715, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV024','47867',  6,2,-16.4957719, -68.1168489, 45, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV025','40003',  6,2,-16.4957548, -68.1164863, 32, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,TRUE, FALSE,  2,8),
+('GV026','55216',  6,2,-16.4957682, -68.1165098, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,TRUE,FALSE,FALSE,TRUE, FALSE,  2,8),
+('GV027','90371',  6,2,-16.4974877, -68.1157838, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV028','55406',  6,2,-16.4958003, -68.1168928, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV029','29914',  6,2,-16.49673963,-68.11641909,55, 1, 4,'alta', '08:00','11:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV030','81724',  6,2,-16.4975521, -68.1157321, 50, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV031','107056', 6,2,-16.49630889,-68.11649366,20, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV032','71590',  6,2,-16.4957782, -68.1165822, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV033','104984', 6,2,-16.4975814, -68.1158626, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV034','29896',  6,2,-16.4963966, -68.1163715, 50, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,4),
+('GV035','80967',  7,2,-16.5091174, -68.1096591, 10, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV036','14714',  7,2,-16.5088472, -68.1104503, 10, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV037','84545',  7,2,-16.508287,  -68.111526,  30, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV038','106437', 7,2,-16.5092949, -68.1092507, 10, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV039','84967',  7,2,-16.5087846, -68.1101773, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV040','10315',  7,2,-16.5087989, -68.1101732, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV041','14923',  7,2,-16.5087327, -68.1102001, 30, 1, 4,'media','08:00','18:00', FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,  1,2),
+('GV042','76807',  8,2,-16.530631,  -68.0735448, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV043','103162', 8,2,-16.53065559,-68.07345073,35, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV044','65324',  8,2,-16.5305981, -68.0731682, 33, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV045','89814',  8,2,-16.53143,   -68.073275,  34, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV046','91802',  8,2,-16.53107353,-68.07253814,30, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV047','92130',  8,2,-16.530815,  -68.0736671, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV048','10153',  8,2,-16.53081059,-68.07353309,20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV049','107855', 8,1,-16.5313167, -68.07484436,50, 1, 4,'alta', '08:00','12:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV050','73219',  8,2,-16.5307233, -68.0736,    20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV051','97829',  9,2,-16.5412566, -68.0725799, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV052','75924',  9,2,-16.5431335, -68.0721572, 25, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV053','114556', 9,2,-16.5413233, -68.0724994, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV054','53570',  9,2,-16.5414397, -68.0727913, 18, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV055','90555',  9,2,-16.53726559,-68.04822706,30, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV056','107289', 9,2,-16.54043194,-68.07276855,30, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV057','74119',  9,2,-16.5407679, -68.0723949, 26, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV058','73125', 10,2,-16.5246436, -68.08708,   15, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV059','12754', 10,2,-16.5237514, -68.0874853, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV060','98041', 10,2,-16.5246889, -68.0872201, 26, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV061','97430', 10,2,-16.5246949, -68.0872469, 18, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV062','55911', 10,2,-16.5246727, -68.0871684, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV063','68070', 10,2,-16.5246293, -68.0869875, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV064','12926', 10,2,-16.5247495, -68.0874313, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV065','19297', 10,2,-16.5246787, -68.0872469, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV066','47463', 10,2,-16.5271527, -68.0881798, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV067','97317', 10,2,-16.52468,   -68.0871791, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV068','89034', 11,2,-16.5346691, -68.0416422, 40, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV069','82768', 11,2,-16.5366758, -68.0386413, 30, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV070','118989',11,2,-16.53405483,-68.03837218,15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV071','81235', 11,2,-16.53399012,-68.03797763,15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,  1,1),
+('GV072','46845', 12,2,-16.49724532,-68.12956581,16, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV073','103592',12,2,-16.49724532,-68.12956581,40, 1, 4,'alta', '08:00','11:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV074','35413', 12,2,-16.497275,  -68.129184,  15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV075','57912', 12,2,-16.4973497, -68.1299397, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV076','55289', 12,2,-16.4969478, -68.1297909, 30, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV077','43766', 12,2,-16.4971828, -68.1295835, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV078','59166', 12,2,-16.4971241, -68.1296153, 20, 1, 4,'media','08:00','18:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV079','55201', 12,2,-16.4970908, -68.1292564, 15, 1, 4,'baja', '09:00','17:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV080','93717', 12,2,-16.4973801, -68.1285694, 45, 1, 4,'alta', '08:00','11:00', FALSE,FALSE,FALSE,FALSE,TRUE,FALSE,FALSE,  1,3),
+('GV112','107855',19,1,-16.4932266, -68.14419,  120, 1, 5,'alta', '08:00','10:00', TRUE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,   2,4),
+('GV113','107855',20,1,-16.4999613, -68.1348082,120, 1, 5,'alta', '08:00','10:00', TRUE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,   2,4),
+('GV114','120906',21,1,-16.5113081, -68.1238442,120, 1, 5,'alta', '08:00','10:00', TRUE,FALSE,FALSE,TRUE,FALSE,FALSE,FALSE,   2,4);
+
+-- ────────────────────────────────────────────────────────────
+-- 8.10  MICRO-TAREAS
+-- ────────────────────────────────────────────────────────────
+INSERT INTO micro_tareas (id_categoria, nombre, orden) VALUES
+(1, 'Verificar stock en góndola',            1),
+(1, 'Colocar faldones',                      2),
+(1, 'Instalar toldos enrollables',           3),
+(1, 'Revisar exhibidor metálico 3 bandejas', 4),
+(1, 'Acomodar productos por rotación',       5),
+(1, 'Fotografiar góndola completa',          6),
+(2, 'Verificar stock en punto de venta',     1),
+(2, 'Colocar gancheras de pared',            2),
+(2, 'Instalar bastidor',                     3),
+(2, 'Revisar ganchera Kriolla',              4),
+(2, 'Acomodar canastilla Kris Gelatina',     5),
+(2, 'Colocar banderines en lona',            6),
+(2, 'Fotografiar punto de venta',            7),
+(3, 'Reposición puntual de producto',        1),
+(3, 'Colocar exhibidor plástico 3 bandejas', 2),
+(3, 'Instalar marco destacador',             3),
+(3, 'Revisar exhibidor colgante caldos',     4),
+(3, 'Fotografiar punto de venta',            5);
+
+
+-- ────────────────────────────────────────────────────────────
+-- 8.11  DATOS DE EJEMPLO (demo del sistema funcionando)
+-- ────────────────────────────────────────────────────────────
+
+-- Ruta de ejemplo para hoy  (id_reponedor=4 = Reponedor 1)
+INSERT INTO rutas (id_reponedor, id_supervisor, fecha, estado, distancia_km_estimada, duracion_min_estimada)
+VALUES (4, 1, CURRENT_DATE, 'en_curso', 12.5, 480);
+
+-- Paradas de la ruta
+INSERT INTO ruta_puntos (id_ruta, id_pdv, orden, hora_estimada_llegada, estado) VALUES
+(1, 1, 1, '08:00', 'completada'),
+(1, 2, 2, '08:50', 'completada'),
+(1, 3, 3, '09:30', 'en_curso'),
+(1, 4, 4, '10:00', 'pendiente'),
+(1, 5, 5, '10:30', 'pendiente');
+
+-- Visitas completadas
+INSERT INTO visitas (id_ruta_punto, id_reponedor, id_pdv, fecha, hora_llegada, hora_salida, estado, foto_url, lat_registro, lon_registro)
+VALUES
+(1, 4, 1, CURRENT_DATE,
+ NOW() - INTERVAL '3 hours',
+ NOW() - INTERVAL '2 hours 20 minutes',
+ 'completada',
+ 'https://res.cloudinary.com/venado/ejemplo_foto.jpg',
+ -16.53678674, -68.04696858),
+(2, 4, 2, CURRENT_DATE,
+ NOW() - INTERVAL '2 hours 10 minutes',
+ NOW() - INTERVAL '1 hour 40 minutes',
+ 'completada',
+ NULL,
+ -16.5360361, -68.0458746);
+
+-- Historial de tiempos (datos para el motor de optimización)
+INSERT INTO historial_tiempos_pdv (id_pdv, id_categoria, id_reponedor, fecha, dia_semana, tiempo_real_min, tiempo_estimado_min, clima)
+VALUES
+(1, 2, 4, CURRENT_DATE - 7,  1, 42, 40, 'soleado'),
+(1, 2, 4, CURRENT_DATE - 14, 1, 38, 40, 'nublado'),
+(2, 2, 4, CURRENT_DATE - 7,  1, 28, 30, 'soleado'),
+(3, 2, 4, CURRENT_DATE - 7,  1, 22, 20, 'lluvia'),
+(4, 2, 4, CURRENT_DATE - 7,  1, 19, 20, 'soleado');
+
+-- KPIs del día anterior
+INSERT INTO kpis_diarios (fecha, id_reponedor, id_supervisor,
+    total_pdvs_asignados, total_pdvs_visitados, total_pdvs_omitidos,
+    tiempo_total_campo_min, tiempo_total_traslado_min, tiempo_total_atencion_min,
+    distancia_planificada_km, distancia_real_km,
+    quiebres_stock_encontrados, incidencias_reportadas, fotos_tomadas,
+    desviacion_tiempo_min, desviacion_km)
+VALUES
+(CURRENT_DATE - 1, 4, 1, 12, 11, 1, 480, 120, 360, 10.2, 11.5, 2, 1, 11, 15,  1.3),
+(CURRENT_DATE - 1, 5, 1, 10, 10, 0, 420, 90,  330, 8.5,  8.2,  0, 0, 10, -5, -0.3);
+
+-- Notificaciones de ejemplo
+INSERT INTO notificaciones (id_supervisor, id_reponedor, id_pdv, tipo, mensaje, urgencia)
+VALUES
+(1, 4, 3,    'retraso',                   'Reponedor 1 lleva 20 min de retraso en GV003. Estimado de llegada: 09:50.', 'normal'),
+(1, 4, NULL, 'redistribucion_pendiente',  'El sistema sugiere redistribuir GV014 al Reponedor 2 para optimizar la ruta del jueves.', 'baja');
+
+
+-- ============================================================
+-- ░░░ RESUMEN FINAL ░░░
+-- ============================================================
+-- Tablas:     21 (roles, departamentos, ciudades, usuarios,
+--                 perfiles_reponedor, sesiones, categorias_cliente,
+--                 mercados, puntos_de_venta, micro_tareas,
+--                 rutas, ruta_puntos, visitas, visita_tareas,
+--                 posiciones_gps, incidencias, historial_tiempos_pdv,
+--                 redistribuciones_sugeridas, kpis_diarios,
+--                 notificaciones, audit_log)
+--
+-- Vistas:      6 (v_pdvs_completo, v_cobertura_diaria,
+--                 v_tiempos_reales_categoria, v_incidencias_abiertas,
+--                 v_ranking_reponedores, v_resumen_departamento)
+--
+-- Índices:    20+
+-- PDVs:       83 (GV001-GV080 + GV112-GV114)
+-- Usuarios:   27 (3 supervisores + 24 reponedores)
+-- Ciudades:   26 (en 9 departamentos)
+-- Mercados:   31 (todos en La Paz, expandibles a todo Bolivia)
+-- ============================================================

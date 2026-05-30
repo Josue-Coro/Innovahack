@@ -669,3 +669,12 @@ class LoginResponse(BaseModel):
 
 class LogoutRequest(BaseModel):
     token: str
+
+# --- GPS TRACKING ---
+class GPSLocationCreate(BaseModel):
+    latitud: float
+    longitud: float
+    precision_m: Optional[float] = None
+    velocidad_kmh: Optional[float] = None
+    nivel_bateria: Optional[int] = None
+    timestamp: Optional[datetime] = None

@@ -782,7 +782,40 @@ POST /login
 ---
 c
 
-# 7. RESUMEN RÁPIDO DE TODOS LOS ENDPOINTS (Cheat Sheet)
+# 7. RASTREO GPS Y BATERÍA
+
+Para que la aplicación móvil reporte la ubicación actual del reponedor en background o cuando pierde conexión al WebSocket, se debe usar este endpoint.
+
+```http
+POST /usuarios/{id_usuario}/gps
+```
+
+**Body (JSON):**
+```json
+{
+  "latitud": -16.536786,
+  "longitud": -68.046968,
+  "precision_m": 12.5,
+  "velocidad_kmh": 4.2,
+  "nivel_bateria": 85,
+  "timestamp": "2023-10-25T14:30:00Z"
+}
+```
+*Nota:* `precision_m`, `velocidad_kmh`, `nivel_bateria` y `timestamp` son opcionales, pero **se recomienda fuertemente enviar el `nivel_bateria`** para que el supervisor vea el celular del reponedor en vivo.
+
+**Respuesta Exitosa (201 Created):**
+```json
+{
+  "message": "Ubicación GPS actualizada exitosamente"
+}
+```
+
+> **¡Importante para WebSockets!**
+> Si estás usando la conexión en vivo `ws://.../ws/reponedor/{id}`, también puedes enviar el campo `"nivel_bateria": 85` en el JSON que mandas por el socket para actualizar el panel del supervisor al instante.
+
+---
+
+# 8. RESUMEN RÁPIDO DE TODOS LOS ENDPOINTS (Cheat Sheet)
 
 ### Endpoints Principales (Operación Diaria)
 | Método | Endpoint | Descripción |
