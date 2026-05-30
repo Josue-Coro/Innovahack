@@ -812,6 +812,46 @@ POST /usuarios/{id_usuario}/gps
 > **¡Importante para WebSockets!**
 > Si estás usando la conexión en vivo `ws://.../ws/reponedor/{id}`, también puedes enviar el campo `"nivel_bateria": 85` en el JSON que mandas por el socket para actualizar el panel del supervisor al instante.
 
+## 7.2 WebSockets (Rastreo en Tiempo Real)
+
+Para una transmisión contínua cada minuto (o cada X segundos) mientras la app está abierta, **ya existe un endpoint WebSocket**.
+
+**URL de Conexión:**
+```http
+ws://127.0.0.1:8000/ws/reponedor/{id_usuario}
+```
+*(Si usas Render, cambia `ws://127.0.0.1:8000` por `wss://tu-dominio-en-render.com`)*
+
+**Cómo usarlo en el Frontend (Ejemplo en Javascript / React Native):**
+
+```javascript
+// 1. Conectar al WebSocket usando el ID del reponedor
+const ws = new WebSocket('ws://127.0.0.1:8000/ws/reponedor/30');
+
+ws.onopen = () => {
+  console.log('Conectado al GPS en tiempo real');
+  
+  // 2. Configurar un intervalo para enviar la ubicación cada 1 minuto (60000 ms)
+  setInterval(() => {
+    // Aquí obtienes la ubicación real del GPS del teléfono
+    const payload = {
+      "lat": -17.7833,
+      "lon": -63.1819,
+      "nivel_bateria": 85,
+      "timestamp": new Date().toISOString()
+    };
+    
+    // Enviar al servidor
+    ws.send(JSON.stringify(payload));
+  }, 60000); // 60,000 ms = 1 minuto
+};
+
+ws.onclose = () => {
+  console.log('Desconectado del servidor GPS');
+  // Aquí podrías intentar reconectar o usar el POST /usuarios/{id}/gps de respaldo
+};
+```
+
 ### Obtener las últimas ubicaciones de todos los reponedores
 Este endpoint es ideal para pintar el mapa en vivo la primera vez que carga el dashboard del supervisor.
 ```http

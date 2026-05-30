@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from database import get_db
 import models
@@ -9,12 +9,24 @@ from routers.websocket import manager
 
 router = APIRouter(prefix="/usuarios", tags=["GPS"])
 
+# Zona horaria de Bolivia (UTC-4)
+BOLIVIA_TZ = timezone(timedelta(hours=-4))
+
 @router.post("/{id_usuario}/gps", status_code=status.HTTP_201_CREATED)
 async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCreate, db: Session = Depends(get_db)):
     # 1. Verificar si el usuario existe y es reponedor (asumiendo rol 3 = reponedor, o simplemente si tiene un perfil)
     usuario = db.query(models.Usuario).filter(models.Usuario.id_usuario == id_usuario).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # Manejar la hora (Dispositivo o Bolivia)
+    if gps_data.timestamp:
+        if gps_data.timestamp.tzinfo is not None:
+            hora_guardar = gps_data.timestamp.astimezone(BOLIVIA_TZ).replace(tzinfo=None)
+        else:
+            hora_guardar = gps_data.timestamp
+    else:
+        hora_guardar = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
 
     # 2. Guardar en el histórico (posiciones_gps)
     nueva_posicion = models.PosicionGPS(
@@ -24,7 +36,7 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
         precision_m=gps_data.precision_m,
         velocidad_kmh=gps_data.velocidad_kmh,
         nivel_bateria=gps_data.nivel_bateria,
-        timestamp=gps_data.timestamp or datetime.utcnow()
+        timestamp=hora_guardar
     )
     db.add(nueva_posicion)
 
@@ -36,7 +48,7 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
         if gps_data.nivel_bateria is not None:
             perfil.bateria_actual = gps_data.nivel_bateria
         perfil.online = True
-        perfil.ultima_conexion = datetime.utcnow()
+        perfil.ultima_conexion = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
         db.add(perfil)
     
     db.commit()
@@ -47,7 +59,7 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
         "lat": gps_data.latitud,
         "lon": gps_data.longitud,
         "bateria_actual": gps_data.nivel_bateria,
-        "timestamp": gps_data.timestamp.isoformat() if gps_data.timestamp else datetime.utcnow().isoformat()
+        "timestamp": hora_guardar.isoformat()
     }
     
     # Esto también actualizará el estado interno del websocket memory y avisará al supervisor
@@ -79,9 +91,9 @@ async def get_ultimas_ubicaciones(db: Session = Depends(get_db)):
 
 @router.get("/{id_usuario}/gps", response_model=list[schemas.GPSLocationResponse])
 async def get_historial_gps(id_usuario: int, fecha: str = None, db: Session = Depends(get_db)):
-    # Si no se envía fecha, usamos la fecha de hoy
+    # Si no se envía fecha, usamos la fecha de hoy en Bolivia
     if not fecha:
-        fecha_obj = datetime.utcnow().date()
+        fecha_obj = datetime.now(BOLIVIA_TZ).date()
     else:
         try:
             fecha_obj = datetime.strptime(fecha, "%Y-%m-%d").date()

@@ -2,7 +2,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import List, Dict, Any
 import logging
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+# Zona horaria de Bolivia (UTC-4)
+BOLIVIA_TZ = timezone(timedelta(hours=-4))
 
 from database import SessionLocal
 import models
@@ -61,13 +64,23 @@ class ConnectionManager:
 
     async def update_reponedor_state(self, reponedor_id: str, data: Dict[str, Any]):
         # Update internal memory state
+        if data.get("timestamp"):
+            try:
+                # Intenta parsear el timestamp ISO
+                ts = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
+                hora_guardar = ts.astimezone(BOLIVIA_TZ).replace(tzinfo=None)
+            except ValueError:
+                hora_guardar = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+        else:
+            hora_guardar = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+            
         self.reponedor_states[reponedor_id] = {
             "lat": float(data.get("lat", 0.0)),
             "lon": float(data.get("lon", 0.0)),
             "pdv_actual": str(data.get("pdv_actual", "")),
             "bateria_actual": data.get("nivel_bateria") or data.get("bateria_actual"),
             "ultimo_update": datetime.now(timezone.utc),
-            "timestamp_client": str(data.get("timestamp", "")),
+            "timestamp_client": hora_guardar.isoformat(),
             "estado": "activo"
         }
         
@@ -80,7 +93,7 @@ class ConnectionManager:
                 latitud=float(data.get("lat", 0.0)),
                 longitud=float(data.get("lon", 0.0)),
                 nivel_bateria=data.get("nivel_bateria") or data.get("bateria_actual"),
-                timestamp=datetime.utcnow()
+                timestamp=hora_guardar
             )
             db.add(pos)
             
@@ -94,7 +107,7 @@ class ConnectionManager:
                     perfil.bateria_actual = bateria
                     
                 perfil.online = True
-                perfil.ultima_conexion = datetime.utcnow()
+                perfil.ultima_conexion = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
                 db.add(perfil)
             db.commit()
         except Exception as e:
