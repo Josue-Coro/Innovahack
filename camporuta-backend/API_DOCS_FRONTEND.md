@@ -780,6 +780,7 @@ POST /login
 > **Nota para el Frontend:** El `token` que devuelve el endpoint de login se guarda automáticamente en la base de datos en la tabla de sesiones con una expiración de 30 días. Actualmente las rutas no exigen el token en los headers de forma estricta, pero el frontend puede guardarlo en `localStorage` para mantener la sesión del usuario viva e identificarlo.
 
 ---
+c
 
 # 7. RESUMEN RÁPIDO DE TODOS LOS ENDPOINTS (Cheat Sheet)
 

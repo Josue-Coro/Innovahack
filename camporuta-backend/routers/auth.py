@@ -54,3 +54,11 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
         "usuario": usuario,
         "rol": rol_nombre
     }
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(req: schemas.LogoutRequest, db: Session = Depends(get_db)):
+    db_sesion = db.query(models.Sesion).filter(models.Sesion.token_jwt == req.token).first()
+    if db_sesion:
+        db.delete(db_sesion)
+        db.commit()
+    return None

@@ -666,3 +666,6 @@ class LoginResponse(BaseModel):
     token: str
     usuario: Usuario
     rol: Optional[str] = None
+
+class LogoutRequest(BaseModel):
+    token: str
