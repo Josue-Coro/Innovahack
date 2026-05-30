@@ -812,6 +812,53 @@ POST /usuarios/{id_usuario}/gps
 > **¡Importante para WebSockets!**
 > Si estás usando la conexión en vivo `ws://.../ws/reponedor/{id}`, también puedes enviar el campo `"nivel_bateria": 85` en el JSON que mandas por el socket para actualizar el panel del supervisor al instante.
 
+### Obtener las últimas ubicaciones de todos los reponedores
+Este endpoint es ideal para pintar el mapa en vivo la primera vez que carga el dashboard del supervisor.
+```http
+GET /usuarios/reponedores/ultimas-ubicaciones
+```
+**Respuesta:**
+```json
+[
+  {
+    "id_usuario": 30,
+    "nombre": "reponedor",
+    "lat_actual": -17.7833,
+    "lon_actual": -63.1819,
+    "bateria_actual": 85,
+    "online": true,
+    "ultima_conexion": "2023-10-25T14:30:00Z"
+  }
+]
+```
+
+### Obtener el historial GPS (recorrido) de un reponedor
+Dibuja la ruta histórica (camino de miguitas) que tomó el reponedor en el mapa.
+```http
+GET /usuarios/{id_usuario}/gps?fecha=YYYY-MM-DD
+```
+*Nota: El parámetro `fecha` es opcional. Si no se envía, se devuelve el historial del día de hoy.*
+
+**Respuesta:**
+```json
+[
+  {
+    "latitud": -17.7833,
+    "longitud": -63.1819,
+    "velocidad_kmh": 4.2,
+    "nivel_bateria": 100,
+    "timestamp": "2023-10-25T08:00:00Z"
+  },
+  {
+    "latitud": -17.7845,
+    "longitud": -63.1820,
+    "velocidad_kmh": 12.5,
+    "nivel_bateria": 99,
+    "timestamp": "2023-10-25T08:05:00Z"
+  }
+]
+```
+
 ---
 
 # 8. RESUMEN RÁPIDO DE TODOS LOS ENDPOINTS (Cheat Sheet)
@@ -830,6 +877,8 @@ POST /usuarios/{id_usuario}/gps
 | `POST` | `/visitas/` | Registrar una visita (inicio o completada) |
 | `PUT` | `/visitas/{id}` | Actualizar visita (marcar salida, subir foto, registrar quiebre) |
 | `POST` | `/usuarios/{id}/gps` | Enviar coordenadas GPS e historial de batería (tracking) |
+| `GET` | `/usuarios/reponedores/ultimas-ubicaciones` | Obtener lat/lon actual de todos los reponedores |
+| `GET` | `/usuarios/{id}/gps` | Obtener el rastro histórico (puntos) de un reponedor |
 | `POST` | `/visitas/{id}/registrar_tiempo` | Registrar tiempo real (feedback) |
 | `POST` | `/visitas/ruta/{id}/importar` | Importar visitas desde Excel/CSV |
 | `GET` | `/dashboard/metrics` | Métricas generales |

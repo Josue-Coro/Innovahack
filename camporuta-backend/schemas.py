@@ -678,3 +678,25 @@ class GPSLocationCreate(BaseModel):
     velocidad_kmh: Optional[float] = None
     nivel_bateria: Optional[int] = None
     timestamp: Optional[datetime] = None
+
+class GPSLocationResponse(BaseModel):
+    latitud: float
+    longitud: float
+    velocidad_kmh: Optional[float] = None
+    nivel_bateria: Optional[int] = None
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+class ReponedorUltimaUbicacion(BaseModel):
+    id_usuario: int
+    nombre: str
+    lat_actual: Optional[float] = None
+    lon_actual: Optional[float] = None
+    bateria_actual: Optional[int] = None
+    online: bool
+    ultima_conexion: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

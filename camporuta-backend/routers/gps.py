@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from database import get_db
 import models
@@ -54,3 +54,47 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
     await manager.update_reponedor_state(str(id_usuario), data_ws)
 
     return {"message": "Ubicación GPS actualizada exitosamente"}
+
+@router.get("/reponedores/ultimas-ubicaciones", response_model=list[schemas.ReponedorUltimaUbicacion])
+async def get_ultimas_ubicaciones(db: Session = Depends(get_db)):
+    # Trae los perfiles de los reponedores junto con su nombre de usuario
+    resultados = db.query(
+        models.PerfilReponedor, models.Usuario.nombre
+    ).join(
+        models.Usuario, models.Usuario.id_usuario == models.PerfilReponedor.id_usuario
+    ).all()
+
+    respuesta = []
+    for perfil, nombre in resultados:
+        respuesta.append({
+            "id_usuario": perfil.id_usuario,
+            "nombre": nombre,
+            "lat_actual": perfil.lat_actual,
+            "lon_actual": perfil.lon_actual,
+            "bateria_actual": perfil.bateria_actual,
+            "online": perfil.online,
+            "ultima_conexion": perfil.ultima_conexion
+        })
+    return respuesta
+
+@router.get("/{id_usuario}/gps", response_model=list[schemas.GPSLocationResponse])
+async def get_historial_gps(id_usuario: int, fecha: str = None, db: Session = Depends(get_db)):
+    # Si no se envía fecha, usamos la fecha de hoy
+    if not fecha:
+        fecha_obj = datetime.utcnow().date()
+    else:
+        try:
+            fecha_obj = datetime.strptime(fecha, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+
+    inicio_dia = datetime.combine(fecha_obj, datetime.min.time())
+    fin_dia = inicio_dia + timedelta(days=1)
+
+    puntos = db.query(models.PosicionGPS).filter(
+        models.PosicionGPS.id_reponedor == id_usuario,
+        models.PosicionGPS.timestamp >= inicio_dia,
+        models.PosicionGPS.timestamp < fin_dia
+    ).order_by(models.PosicionGPS.timestamp.asc()).all()
+
+    return puntos
