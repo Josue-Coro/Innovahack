@@ -13,7 +13,7 @@ from routers.websocket import router as websocket_router, check_reponedor_timeou
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: launch background task for reponedor inactivity monitoring
-    task = asyncio.create_task(check_reponedor_timeouts())
+    task = asyncio.create_task(websocket.check_reponedor_timeouts())
     yield
     # Shutdown: cancel background task
     task.cancel()
@@ -23,8 +23,8 @@ async def lifespan(app: FastAPI):
         pass
 
 app = FastAPI(
-    title="CampoRuta API",
-    description="FastAPI Backend — Grupo Venado — CampoRuta v3.0",
+    title="CampoRuta - Backend",
+    description="API para optimización de rutas (v3.0 - Soporte Nacional)",
     version="3.0.0",
     lifespan=lifespan
 )
@@ -39,10 +39,17 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(rutas_router)
-app.include_router(visitas_router)
-app.include_router(dashboard_router)
-app.include_router(websocket_router)
+app.include_router(websocket.router)
+app.include_router(rutas.router)
+app.include_router(visitas.router)
+app.include_router(dashboard.router)
+
+# Include new CRUD routers
+app.include_router(roles.router)
+app.include_router(geografia.router)
+app.include_router(usuarios.router)
+app.include_router(catalogo.router)
+app.include_router(gestion.router)
 
 @app.get("/")
 def read_root():
