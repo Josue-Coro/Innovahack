@@ -746,7 +746,42 @@ Para la administración del sistema (ABM), existen endpoints CRUD estándar (`GE
 
 ---
 
-# 6. RESUMEN RÁPIDO DE TODOS LOS ENDPOINTS (Cheat Sheet)
+# 6. AUTENTICACIÓN (LOGIN)
+
+El backend expone un endpoint específico para el inicio de sesión. 
+
+```http
+POST /login
+```
+
+**Body (JSON):**
+```json
+{
+  "email": "juan@venado.bo",
+  "password": "mi_password_seguro123"
+}
+```
+
+**Respuesta Exitosa (200 OK):**
+```json
+{
+  "token": "4f5a... (UUID del Token de Sesión)",
+  "usuario": {
+    "id_usuario": 1,
+    "nombre": "Juan Reponedor",
+    "email": "juan@venado.bo",
+    "id_rol": 3,
+    "activo": true
+    // ... otros datos del usuario
+  },
+  "rol": "reponedor"
+}
+```
+> **Nota para el Frontend:** El `token` que devuelve el endpoint de login se guarda automáticamente en la base de datos en la tabla de sesiones con una expiración de 30 días. Actualmente las rutas no exigen el token en los headers de forma estricta, pero el frontend puede guardarlo en `localStorage` para mantener la sesión del usuario viva e identificarlo.
+
+---
+
+# 7. RESUMEN RÁPIDO DE TODOS LOS ENDPOINTS (Cheat Sheet)
 
 ### Endpoints Principales (Operación Diaria)
 | Método | Endpoint | Descripción |

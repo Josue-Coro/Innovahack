@@ -656,3 +656,13 @@ class AuditLog(AuditLogBase):
     id_audit: int
     creado_en: datetime
     model_config = ConfigDict(from_attributes=True)
+
+# --- LOGIN (AUTH) ---
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginResponse(BaseModel):
+    token: str
+    usuario: Usuario
+    rol: Optional[str] = None
