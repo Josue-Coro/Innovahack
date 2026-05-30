@@ -685,6 +685,7 @@ class GPSLocationResponse(BaseModel):
     velocidad_kmh: Optional[float] = None
     nivel_bateria: Optional[int] = None
     timestamp: datetime
+    fecha_formateada: str
 
     class Config:
         from_attributes = True

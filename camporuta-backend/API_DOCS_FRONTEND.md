@@ -887,14 +887,16 @@ GET /usuarios/{id_usuario}/gps?fecha=YYYY-MM-DD
     "longitud": -63.1819,
     "velocidad_kmh": 4.2,
     "nivel_bateria": 100,
-    "timestamp": "2023-10-25T08:00:00Z"
+    "timestamp": "2026-05-30T19:35:00Z",
+    "fecha_formateada": "7:35 p.m. sábado, 30 de mayo de 2026 (GMT-4) Hora en Bolivia"
   },
   {
     "latitud": -17.7845,
     "longitud": -63.1820,
     "velocidad_kmh": 12.5,
     "nivel_bateria": 99,
-    "timestamp": "2023-10-25T08:05:00Z"
+    "timestamp": "2026-05-30T19:40:00Z",
+    "fecha_formateada": "7:40 p.m. sábado, 30 de mayo de 2026 (GMT-4) Hora en Bolivia"
   }
 ]
 ```
