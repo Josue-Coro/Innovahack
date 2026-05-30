@@ -41,7 +41,7 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
     expira_en = datetime.utcnow() + timedelta(days=30)
     db_sesion = models.Sesion(
         id_usuario=usuario.id_usuario,
-        token_jwt=token,
+        token=token,
         creado_en=datetime.utcnow(),
         expira_en=expira_en
     )
@@ -57,7 +57,7 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(req: schemas.LogoutRequest, db: Session = Depends(get_db)):
-    db_sesion = db.query(models.Sesion).filter(models.Sesion.token_jwt == req.token).first()
+    db_sesion = db.query(models.Sesion).filter(models.Sesion.token == req.token).first()
     if db_sesion:
         db.delete(db_sesion)
         db.commit()
