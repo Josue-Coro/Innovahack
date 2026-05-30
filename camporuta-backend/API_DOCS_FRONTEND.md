@@ -780,7 +780,6 @@ POST /login
 > **Nota para el Frontend:** El `token` que devuelve el endpoint de login se guarda automáticamente en la base de datos en la tabla de sesiones con una expiración de 30 días. Actualmente las rutas no exigen el token en los headers de forma estricta, pero el frontend puede guardarlo en `localStorage` para mantener la sesión del usuario viva e identificarlo.
 
 ---
-c
 
 # 7. RASTREO GPS Y BATERÍA
 
@@ -828,9 +827,9 @@ POST /usuarios/{id_usuario}/gps
 | `DELETE` | `/rutas/{id}` | Eliminar ruta |
 | `POST` | `/rutas/{id}/optimizar` | Optimizar orden de paradas (TSP) |
 | `GET` | `/visitas/ruta/{ruta_id}` | Listar visitas de una ruta |
-| `POST` | `/visitas/ruta/{ruta_id}` | Crear visita |
-| `PUT` | `/visitas/{id}` | Actualizar visita |
-| `DELETE` | `/visitas/{id}` | Eliminar visita |
+| `POST` | `/visitas/` | Registrar una visita (inicio o completada) |
+| `PUT` | `/visitas/{id}` | Actualizar visita (marcar salida, subir foto, registrar quiebre) |
+| `POST` | `/usuarios/{id}/gps` | Enviar coordenadas GPS e historial de batería (tracking) |
 | `POST` | `/visitas/{id}/registrar_tiempo` | Registrar tiempo real (feedback) |
 | `POST` | `/visitas/ruta/{id}/importar` | Importar visitas desde Excel/CSV |
 | `GET` | `/dashboard/metrics` | Métricas generales |
