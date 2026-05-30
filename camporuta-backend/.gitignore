@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 venv/
+.venv/
+*.xlsx
+*.xls
+*.egg-info/
+dist/
+build/
+.pytest_cache/

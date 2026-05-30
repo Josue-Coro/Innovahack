@@ -221,11 +221,6 @@ async def check_reponedor_timeouts():
         except Exception as e:
             logger.error(f"Error checking reponedor timeouts: {e}")
 
-@router.on_event("startup")
-async def startup_event():
-    logger.info("Starting background check for reponedor timeouts...")
-    asyncio.create_task(check_reponedor_timeouts())
-
 @router.websocket("/reponedor/{reponedor_id}")
 async def websocket_reponedor(websocket: WebSocket, reponedor_id: str):
     await manager.connect_reponedor(reponedor_id, websocket)

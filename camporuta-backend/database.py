@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 
-# Load environmental variables from .env
+# Load environmental variables from .env (local dev only; on Render use env vars)
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -14,7 +14,12 @@ if not DATABASE_URL:
 # SQLAlchemy synchronous engine
 engine = create_engine(
     DATABASE_URL,
-    echo=True  # Helpful for tracking queries in a hackathon development environment
+    echo=os.getenv("ENVIRONMENT", "production") == "development",
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,  # Recycle connections every 30 min (important for Supabase pooler)
+    pool_pre_ping=True,  # Test connections before use to avoid stale connections
 )
 
 # Synchronous sessionmaker
