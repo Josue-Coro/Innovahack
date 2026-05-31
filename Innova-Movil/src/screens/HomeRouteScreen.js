@@ -199,10 +199,19 @@ export default function HomeRouteScreen({ navigation }) {
     setError(null);
     try {
       await api.post(endpoints.generarRutaDia);
-      Alert.alert('Éxito', 'Rutas generadas. Refrescando mapa...');
+      
+      // Fetch the newly created route for this user to get its ID
+      const resRuta = await api.get(endpoints.rutaActiva(idReponedor));
+      const newRouteId = resRuta?.data?.id_ruta;
+      
+      if (newRouteId) {
+        // Optimize it silently
+        await api.post(endpoints.optimizarRuta(newRouteId));
+      }
+      
       await loadRoute();
     } catch (e) {
-      setError(getApiError(e, 'Error al generar rutas del día'));
+      setError(getApiError(e, 'Error al generar o optimizar rutas del día'));
     } finally {
       setLoading(false);
     }
@@ -445,13 +454,6 @@ export default function HomeRouteScreen({ navigation }) {
             {loading ? <ActivityIndicator size="small" color="#10B981" /> : <Ionicons name="refresh-circle" size={18} color="#10B981" />}
             <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Generar Ruta</Text>
           </Pressable>
-
-          {ruta?.id_ruta && (
-            <Pressable style={styles.actionBtn} onPress={optimizeRoute} disabled={optimizing}>
-              {optimizing ? <ActivityIndicator size="small" color="#8B5CF6" /> : <Ionicons name="git-network-outline" size={18} color="#8B5CF6" />}
-              <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Optimizar</Text>
-            </Pressable>
-          )}
 
           <Pressable style={styles.actionBtn} onPress={fetchMisPdvs} disabled={loading}>
              <Ionicons name="list" size={18} color="#3B82F6" />
