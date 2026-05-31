@@ -207,19 +207,12 @@ export default function VisitExecutionScreen({ route, navigation }) {
 
   const renderTarea = ({ item }) => {
     const nombre = item?.micro_tarea?.nombre ?? 'Tarea Desconocida';
-    const isReponer = nombre.toLowerCase().includes('reponer') || nombre.toLowerCase().includes('entrega');
     
     return (
       <View style={{ marginBottom: 12 }}>
         <Pressable 
           style={[styles.taskRow, item.completada && styles.taskRowCompleted]} 
-          onPress={() => {
-            if (isReponer) {
-              setShowDeliveryUI(!showDeliveryUI);
-            } else {
-              toggleTarea(item.id_visita_tarea);
-            }
-          }}
+          onPress={() => toggleTarea(item.id_visita_tarea)}
         >
           <View style={styles.taskIconWrap}>
             <Ionicons 
@@ -230,37 +223,8 @@ export default function VisitExecutionScreen({ route, navigation }) {
           </View>
           <View style={styles.taskInfo}>
             <Text style={[styles.taskName, item.completada && styles.taskNameCompleted]}>{nombre}</Text>
-            {isReponer && (
-              <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
-                Toca para abrir catálogo de entrega
-              </Text>
-            )}
           </View>
-          {isReponer && (
-             <Pressable style={styles.taskCheckBtn} onPress={() => toggleTarea(item.id_visita_tarea)}>
-               <Ionicons name="checkmark" size={18} color="#fff" />
-             </Pressable>
-          )}
         </Pressable>
-        
-        {isReponer && showDeliveryUI && (
-          <View style={styles.deliveryInlineContainer}>
-             {loadingProductos ? (
-               <ActivityIndicator style={{marginTop: 10}} />
-             ) : (
-               <>
-                 {productos.map(p => renderProducto({ item: p }))}
-                 <Pressable 
-                   style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
-                   onPress={confirmarEntrega}
-                   disabled={submitting || entregado}
-                 >
-                   <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
-                 </Pressable>
-               </>
-             )}
-          </View>
-        )}
       </View>
     );
   };
@@ -304,40 +268,47 @@ export default function VisitExecutionScreen({ route, navigation }) {
       )}
 
       {estadoVisita === 'en_curso' && (
-        <View style={{ flex: 1, padding: 16 }}>
-          <Text style={styles.sectionTitle}>Checklist de Visita</Text>
-          
-          {loadingTareas ? (
-            <ActivityIndicator style={{marginTop: 20}} />
-          ) : (
-            <FlatList
-              data={tareas}
-              keyExtractor={t => String(t.id_visita_tarea)}
-              renderItem={renderTarea}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              ListEmptyComponent={
-                <View>
-                  <Text style={{ color: '#9CA3AF', marginBottom: 15 }}>No hay tareas asignadas para este punto. Puedes realizar entregas libremente a continuación.</Text>
-                  {loadingProductos ? (
-                    <ActivityIndicator style={{marginTop: 10}} />
-                  ) : (
-                    <View style={styles.deliveryInlineContainer}>
-                      {productos.map(p => renderProducto({ item: p }))}
-                      <Pressable 
-                        style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
-                        onPress={confirmarEntrega}
-                        disabled={submitting || entregado}
-                      >
-                        <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-              }
-            />
-          )}
+        <View style={{ flex: 1 }}>
+          <FlatList
+            ListHeaderComponent={
+              <View style={{ padding: 16 }}>
+                <Text style={styles.sectionTitle}>Checklist de Visita</Text>
+                {loadingTareas ? (
+                  <ActivityIndicator style={{marginTop: 20}} />
+                ) : (
+                  <>
+                    {tareas.length === 0 ? (
+                      <Text style={{ color: '#9CA3AF', marginBottom: 15 }}>No hay tareas asignadas para este punto.</Text>
+                    ) : (
+                      tareas.map(t => renderTarea({ item: t }))
+                    )}
+                  </>
+                )}
+                
+                <View style={{ height: 1, backgroundColor: '#E5E7EB', marginVertical: 20 }} />
+                
+                <Text style={styles.sectionTitle}>Productos a entregar</Text>
+                {loadingProductos ? (
+                  <ActivityIndicator style={{marginTop: 10}} />
+                ) : (
+                  <View style={styles.deliveryContainer}>
+                    {productos.map(p => renderProducto({ item: p, key: String(p.id_producto) }))}
+                    <Pressable 
+                      style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
+                      onPress={confirmarEntrega}
+                      disabled={submitting || entregado}
+                    >
+                      <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            }
+            data={[]} // Solo usamos la lista para scroll usando ListHeaderComponent
+            renderItem={() => null}
+          />
 
-          <View style={styles.bottomActions}>
+          <View style={[styles.bottomActions, { paddingHorizontal: 16, paddingBottom: 16 }]}>
             <Pressable
               style={[styles.button, styles.buttonEnd, submitting ? styles.buttonDisabled : null]}
               onPress={checkOut}
