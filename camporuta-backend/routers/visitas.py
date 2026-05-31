@@ -5,13 +5,27 @@ from typing import List
 import pandas as pd
 import io
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+import math
 
 from database import get_db
 import models
 import schemas
 from routers.websocket import manager
 from services.feedback import registrar_tiempo_real, analizar_comentario
+
+# Zona horaria de Bolivia (UTC-4)
+BOLIVIA_TZ = timezone(timedelta(hours=-4))
+
+def calcular_distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371000  # radio de la Tierra en metros
+    phi_1 = math.radians(lat1)
+    phi_2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = math.sin(delta_phi / 2.0)**2 + math.cos(phi_1) * math.cos(phi_2) * math.sin(delta_lambda / 2.0)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 router = APIRouter(
     prefix="/visitas",
@@ -246,3 +260,116 @@ async def endpoint_registrar_tiempo_real(
         return visita
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+@router.post("/{visita_id}/iniciar", response_model=schemas.Visita)
+async def iniciar_visita(
+    visita_id: int,
+    req: schemas.CheckInRequest,
+    db: Session = Depends(get_db)
+):
+    visita = db.query(models.Visita).filter(models.Visita.id_visita == visita_id).first()
+    if not visita:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+        
+    if visita.estado != "pendiente":
+        raise HTTPException(status_code=400, detail=f"La visita ya no está pendiente (Estado: {visita.estado})")
+
+    # Obtener el PDV
+    pdv = db.query(models.PuntoDeVenta).filter(models.PuntoDeVenta.id_pdv == visita.id_pdv).first()
+    if not pdv:
+        raise HTTPException(status_code=404, detail="Punto de venta no encontrado")
+
+    # Calcular distancia
+    distancia = calcular_distancia_metros(req.latitud_actual, req.longitud_actual, pdv.latitud, pdv.longitud)
+    
+    # Tolerancia de 50 metros
+    if distancia > 50:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Estás demasiado lejos de la tienda para iniciar la visita. Estás a {int(distancia)} metros. Debes estar a menos de 50m."
+        )
+
+    # Actualizar la visita
+    visita.hora_llegada = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+    visita.estado = "en_progreso"
+    
+    # Sincronizar estado en RutaPunto si existe
+    if visita.id_ruta_punto:
+        rp = db.query(models.RutaPunto).filter(models.RutaPunto.id_ruta_punto == visita.id_ruta_punto).first()
+        if rp:
+            rp.estado = "en_progreso"
+            db.add(rp)
+
+    db.add(visita)
+    db.commit()
+    db.refresh(visita)
+
+    # Notificar WebSocket
+    await manager.broadcast({
+        "type": "VISITA_ACTUALIZADA",
+        "payload": {
+            "id_visita": visita.id_visita, 
+            "id_ruta_punto": visita.id_ruta_punto, 
+            "estado": visita.estado,
+            "distancia_iniciada_m": int(distancia)
+        }
+    })
+
+    return visita
+
+@router.post("/{visita_id}/finalizar", response_model=schemas.Visita)
+async def finalizar_visita(
+    visita_id: int,
+    req: schemas.CheckInRequest,
+    db: Session = Depends(get_db)
+):
+    visita = db.query(models.Visita).filter(models.Visita.id_visita == visita_id).first()
+    if not visita:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+        
+    if visita.estado != "en_progreso":
+        raise HTTPException(status_code=400, detail="La visita no está en progreso, por lo que no se puede finalizar.")
+
+    # Validar distancia de salida (50 metros)
+    pdv = db.query(models.PuntoDeVenta).filter(models.PuntoDeVenta.id_pdv == visita.id_pdv).first()
+    if pdv:
+        distancia = calcular_distancia_metros(req.latitud_actual, req.longitud_actual, pdv.latitud, pdv.longitud)
+        if distancia > 50:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Debes estar en la tienda para finalizar la visita. Estás a {int(distancia)} metros (Max: 50m)."
+            )
+
+    hora_actual = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+    visita.hora_salida = hora_actual
+    visita.estado = "completada"
+
+    # Calcular duración exacta
+    if visita.hora_llegada:
+        # Calcular los minutos transcurridos
+        diferencia = hora_actual - visita.hora_llegada
+        minutos = int(diferencia.total_seconds() / 60)
+        visita.duracion_real_min = minutos
+        
+    # Sincronizar estado en RutaPunto
+    if visita.id_ruta_punto:
+        rp = db.query(models.RutaPunto).filter(models.RutaPunto.id_ruta_punto == visita.id_ruta_punto).first()
+        if rp:
+            rp.estado = "completada"
+            db.add(rp)
+
+    db.add(visita)
+    db.commit()
+    db.refresh(visita)
+
+    # Notificar WebSocket
+    await manager.broadcast({
+        "type": "VISITA_COMPLETADA",
+        "payload": {
+            "id_visita": visita.id_visita, 
+            "duracion_real_min": visita.duracion_real_min,
+            "estado": visita.estado
+        }
+    })
+
+    return visita

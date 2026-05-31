@@ -363,6 +363,42 @@ const visitasCreadas = await response.json();
 
 ---
 
+### 2.5 Marcar "Check-In" en Tienda (Geo-fencing)
+Este endpoint valida que el reponedor esté a menos de **50 metros** de la tienda antes de permitirle iniciar la visita.
+
+```http
+POST /visitas/{id_visita}/iniciar
+```
+**Body:**
+```json
+{
+  "latitud_actual": -17.7812,
+  "longitud_actual": -63.1800
+}
+```
+**Reglas:**
+- Si el reponedor está a más de 50m, devuelve `400 Bad Request` indicando a qué distancia está.
+- Si está cerca, devuelve éxito, cambia el estado a `"en_progreso"` y registra la `hora_llegada`.
+
+---
+
+### 2.6 Marcar "Check-Out" de Tienda (Geo-fencing)
+Este endpoint finaliza la visita y **calcula automáticamente la duración en minutos**. También valida que el reponedor siga a menos de 50 metros de la tienda al finalizar.
+
+```http
+POST /visitas/{id_visita}/finalizar
+```
+**Body:**
+```json
+{
+  "latitud_actual": -17.7812,
+  "longitud_actual": -63.1800
+}
+```
+**Reglas:**
+- Cambia el estado a `"completada"`, registra la `hora_salida` y calcula `duracion_real_min`.
+- Si el reponedor se fue de la tienda antes de apretar finalizar (está a > 50m), devuelve `400 Bad Request`.
+
 ---
 
 # 3. DASHBOARD Y MÉTRICAS
