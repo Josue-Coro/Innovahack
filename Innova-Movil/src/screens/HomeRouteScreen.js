@@ -16,7 +16,6 @@ import api from '../services/apiClient';
 import { useAuthStore, getReponedorId } from '../services/authStore';
 import { endpoints } from '../constants/api';
 import { getApiError } from '../utils/apiError';
-import { useTrackingLocation } from '../hooks/useTrackingLocation';
 import { registrarPosicionGpsSafe } from '../services/gpsService';
 
 function todayIso() {
@@ -50,7 +49,7 @@ export default function HomeRouteScreen({ navigation }) {
   const usuario = useAuthStore((s) => s.usuario);
   const idReponedor = getReponedorId(usuario);
 
-  useTrackingLocation({ intervalMs: 10000 });
+  // GPS solo se activa cuando el usuario lo decide desde los botones.
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
