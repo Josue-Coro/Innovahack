@@ -434,7 +434,7 @@ export default function HomeRouteScreen({ navigation }) {
           <Text style={[styles.headerTitle, { color: themeColors.text }]}>Hola, {usuario?.nombre ?? 'Reponedor'}</Text>
           <Text style={[styles.headerSub, { color: themeColors.textMuted }]}>
             {ruta
-              ? `Ruta #${ruta.id_ruta} · ${ruta.fecha ?? todayIso()} · ${ruta.estado ?? '—'}`
+              ? `Ruta #${ruta.id_ruta} · Progreso: ${allPoints.filter(p => p.estado === 'completada').length}/${allPoints.length}`
               : 'Sin ruta activa'}
           </Text>
         </View>
