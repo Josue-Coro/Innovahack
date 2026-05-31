@@ -336,6 +336,7 @@ export default function HomeRouteScreen({ navigation }) {
     return codigo.includes(lowerQ) || nombre.includes(lowerQ);
   });
 
+  const allPoints = [...points, ...filteredExtra];
   const initials = usuario?.nombre ? usuario.nombre.substring(0, 2).toUpperCase() : 'AV';
 
   return (
@@ -472,13 +473,13 @@ export default function HomeRouteScreen({ navigation }) {
                   showsUserLocation={true}
                   showsMyLocationButton={true}
                   initialRegion={{
-                    latitude: (ruta?.id_ruta ? points : filteredExtra)[0]?.pdv?.latitud ?? -16.5,
-                    longitude: (ruta?.id_ruta ? points : filteredExtra)[0]?.pdv?.longitud ?? -68.15,
+                    latitude: allPoints[0]?.pdv?.latitud ?? -16.5,
+                    longitude: allPoints[0]?.pdv?.longitud ?? -68.15,
                     latitudeDelta: 0.05,
                     longitudeDelta: 0.05,
                   }}
                 >
-                  {(ruta?.id_ruta ? points : filteredExtra).map((item, index) => {
+                  {allPoints.map((item, index) => {
                     const pdv = item?.pdv;
                     if (!pdv?.latitud || !pdv?.longitud) return null;
                     return (
@@ -520,10 +521,10 @@ export default function HomeRouteScreen({ navigation }) {
               </View>
             ) : (
               <FlatList
-                data={ruta?.id_ruta ? points : filteredExtra}
+                data={allPoints}
                 keyExtractor={(item, idx) => String(item?.id_ruta_punto ?? item?.id_pdv ?? idx)}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeColors.text} />}
-                contentContainerStyle={(ruta?.id_ruta ? points.length : filteredExtra.length) ? { paddingBottom: 24 } : styles.emptyList}
+                contentContainerStyle={allPoints.length ? { paddingBottom: 24 } : styles.emptyList}
                 ListEmptyComponent={
                   <Text style={[styles.emptyText, { color: themeColors.textMuted }]}>
                     {ruta ? 'La ruta no tiene paradas asignadas.' : 'Pide a tu supervisor que te asigne una ruta o presiona "Mis PDVs".'}
@@ -542,12 +543,9 @@ export default function HomeRouteScreen({ navigation }) {
                     <Pressable
                       style={({ pressed }) => [styles.card, { backgroundColor: themeColors.cardBg, borderColor: isDarkMode ? '#374151' : '#E5E7EB' }, pressed && styles.cardPressed]}
                       onPress={() => {
-                        if (!visitaId) {
-                          setError('No hay visita registrada para esta parada. Contacta a tu supervisor.');
-                          return;
-                        }
                         navigation.navigate('VisitExecution', {
                           visitaId,
+                          idReponedor,
                           pdv,
                           orden: item?.orden ?? index + 1,
                           estadoVisita: estado,

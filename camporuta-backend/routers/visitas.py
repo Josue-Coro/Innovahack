@@ -102,6 +102,44 @@ async def crear_visita(ruta_id: int, visita: schemas.VisitaCreate, db: Session =
     
     return db_visita
 
+
+@router.post("/libre", response_model=schemas.Visita, status_code=status.HTTP_201_CREATED)
+async def crear_visita_libre(visita: schemas.VisitaCreate, db: Session = Depends(get_db)):
+    """
+    Crea una visita libre, es decir, a un punto de venta que no necesariamente está en la ruta del día.
+    No requiere un id_ruta. El id_ruta_punto quedará en nulo.
+    """
+    db_visita = models.Visita(
+        id_ruta_punto=None,
+        id_reponedor=visita.id_reponedor,
+        id_pdv=visita.id_pdv,
+        fecha=visita.fecha,
+        estado=visita.estado,
+        motivo_no_visita=visita.motivo_no_visita,
+        quiebre_de_stock=visita.quiebre_de_stock,
+        clima_descripcion=visita.clima_descripcion,
+        temperatura_c=visita.temperatura_c,
+        notas=visita.notas,
+        foto_url=visita.foto_url,
+        lat_registro=visita.lat_registro,
+        lon_registro=visita.lon_registro
+    )
+    
+    db.add(db_visita)
+    db.commit()
+    db.refresh(db_visita)
+    
+    # Broadcast creation
+    await manager.broadcast({
+        "type": "VISITA_CREADA_LIBRE",
+        "payload": {
+            "id_visita": db_visita.id_visita, 
+            "id_pdv": db_visita.id_pdv
+        }
+    })
+    
+    return db_visita
+
 @router.put("/{visita_id}", response_model=schemas.Visita)
 async def actualizar_visita(visita_id: int, visita_upd: schemas.VisitaUpdate, db: Session = Depends(get_db)):
     db_visita = db.query(models.Visita).filter(models.Visita.id_visita == visita_id).first()
