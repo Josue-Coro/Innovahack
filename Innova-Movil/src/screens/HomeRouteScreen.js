@@ -593,6 +593,7 @@ export default function HomeRouteScreen({ navigation }) {
                           <Text style={[styles.cardTitle, { color: themeColors.text }]} numberOfLines={1}>
                             {codigo ? `${codigo} · ` : ''}{nombre}
                           </Text>
+                          <StatusPill estado={estado} />
                           {item.distancia != null && estado !== 'completada' && item.distancia <= 100 && (
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981', marginRight: 6 }} />
