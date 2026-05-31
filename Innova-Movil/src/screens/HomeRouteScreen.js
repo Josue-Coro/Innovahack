@@ -58,7 +58,8 @@ export default function HomeRouteScreen({ navigation }) {
   const [ruta, setRuta] = useState(null);
   const [visitasByPdv, setVisitasByPdv] = useState({});
   const [error, setError] = useState(null);
-  const [sendingGps, setSendingGps] = useState(false);
+  const [sendingGpsOnce, setSendingGpsOnce] = useState(false);
+  const [sendingGpsAuto, setSendingGpsAuto] = useState(false);
   const [gpsOk, setGpsOk] = useState(null);
   const [gpsIntervalActive, setGpsIntervalActive] = useState(false);
   const [gpsIntervalId, setGpsIntervalId] = useState(null);
@@ -167,21 +168,27 @@ export default function HomeRouteScreen({ navigation }) {
     }
   }
 
+  // Envia la ubicacion una unica vez (boton verde)
   async function enviarUnaVez() {
     if (!idReponedor) return;
-    
-    setSendingGps(true);
+    setSendingGpsOnce(true);
     setError(null);
-
     const result = await registrarPosicionGpsSafe(idReponedor);
-    setSendingGps(false);
-
+    setSendingGpsOnce(false);
     if (!result.ok) {
       setError(result.message);
       return;
     }
-
     setGpsOk(result.body);
+  }
+
+  // Envia en segundo plano (para el intervalo automatico - NO toca sendingGpsOnce)
+  async function enviarAutoBackground() {
+    if (!idReponedor) return;
+    setSendingGpsAuto(true);
+    const result = await registrarPosicionGpsSafe(idReponedor);
+    setSendingGpsAuto(false);
+    if (result.ok) setGpsOk(result.body);
   }
 
   async function toggleGps() {
@@ -195,9 +202,9 @@ export default function HomeRouteScreen({ navigation }) {
     }
 
     setGpsIntervalActive(true);
-    enviarUnaVez();
+    enviarAutoBackground(); // usa su propio estado, no interfiere con el boton verde
     const id = setInterval(() => {
-      enviarUnaVez();
+      enviarAutoBackground();
     }, 60000);
     setGpsIntervalId(id);
     
@@ -226,7 +233,7 @@ export default function HomeRouteScreen({ navigation }) {
         disabled={!idReponedor}
       >
         <View style={styles.gpsButtonInner}>
-          {sendingGps ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name={gpsIntervalActive ? "stop-circle" : "navigate"} size={20} color="#fff" />}
+          {sendingGpsAuto ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name={gpsIntervalActive ? "stop-circle" : "navigate"} size={20} color="#fff" />}
           <Text style={styles.gpsButtonText}>
             {gpsIntervalActive ? 'Detener monitoreo automático' : 'Activar envío automático GPS'}
           </Text>
@@ -236,13 +243,15 @@ export default function HomeRouteScreen({ navigation }) {
       <Pressable
         style={[styles.gpsButton, {backgroundColor: '#059669'}]}
         onPress={async () => {
-             await enviarUnaVez();
-             Alert.alert('Enviado', 'Tu ubicación actual ha sido enviada al servidor.');
+          await enviarUnaVez();
+          if (!sendingGpsOnce) {
+            Alert.alert('Enviado', 'Tu ubicación actual ha sido enviada al servidor.');
+          }
         }}
-        disabled={!idReponedor || sendingGps}
+        disabled={!idReponedor || sendingGpsOnce}
       >
         <View style={styles.gpsButtonInner}>
-          {sendingGps ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="location" size={20} color="#fff" />}
+          {sendingGpsOnce ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="location" size={20} color="#fff" />}
           <Text style={styles.gpsButtonText}>Mandar ubicación (una vez)</Text>
         </View>
       </Pressable>
