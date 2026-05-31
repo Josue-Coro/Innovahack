@@ -6,7 +6,7 @@ import { endpoints } from '../constants/api';
 import { getApiError } from '../utils/apiError';
 
 export default function DeliveryScreen({ route, navigation }) {
-  const { visitaId, onDeliveryComplete } = route.params;
+  const { visitaId, idReponedor, idPdv, onDeliveryComplete } = route.params;
   
   const [productos, setProductos] = useState([]);
   const [cart, setCart] = useState({});
@@ -47,13 +47,17 @@ export default function DeliveryScreen({ route, navigation }) {
 
     setSubmitting(true);
     try {
-      for (const [id_prod, cantidad] of items) {
-        await api.post(endpoints.entregas, {
-          id_visita: visitaId,
+      const payload = {
+        id_visita: visitaId,
+        id_reponedor: idReponedor,
+        id_pdv: idPdv,
+        productos: items.map(([id_prod, cantidad]) => ({
           id_producto: parseInt(id_prod, 10),
-          cantidad: cantidad
-        });
-      }
+          cantidad_entregada: cantidad
+        }))
+      };
+      
+      await api.post(endpoints.entregas, payload);
       Alert.alert('Éxito', 'Entrega guardada exitosamente.');
       if (onDeliveryComplete) {
         onDeliveryComplete();

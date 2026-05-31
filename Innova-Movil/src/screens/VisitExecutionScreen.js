@@ -123,6 +123,35 @@ export default function VisitExecutionScreen({ route, navigation }) {
     }
   }
 
+  async function cancelarVisita() {
+    if (submitting) return;
+    
+    Alert.alert(
+      'Cancelar',
+      '¿Estás seguro de que deseas cancelar esta visita? Se perderá el progreso y volverá a estar pendiente.',
+      [
+        { text: 'No, mantener', style: 'cancel' },
+        { 
+          text: 'Sí, cancelar', 
+          style: 'destructive',
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await api.post(endpoints.cancelarVisita(visitaId));
+              Alert.alert('Éxito', 'La visita ha sido cancelada.');
+              setEstadoVisita('pendiente');
+              navigation.goBack();
+            } catch (e) {
+              Alert.alert('Error', getApiError(e, 'No se pudo cancelar la visita'));
+            } finally {
+              setSubmitting(false);
+            }
+          }
+        }
+      ]
+    );
+  }
+
   // renderProducto movido a DeliveryScreen.js
 
   const toggleTarea = (idTarea) => {
@@ -205,6 +234,8 @@ export default function VisitExecutionScreen({ route, navigation }) {
                     onPress={() => {
                       navigation.navigate('Delivery', { 
                         visitaId,
+                        idReponedor,
+                        idPdv: pdv?.id_pdv,
                         onDeliveryComplete: () => setEntregado(true)
                       });
                     }}
@@ -255,6 +286,14 @@ export default function VisitExecutionScreen({ route, navigation }) {
                 <Text style={styles.buttonText}>Finalizar Visita (Check-Out)</Text>
               )}
             </Pressable>
+
+            <Pressable
+              style={[styles.button, { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' }, submitting ? styles.buttonDisabled : null]}
+              onPress={cancelarVisita}
+              disabled={submitting}
+            >
+              <Text style={[styles.buttonText, { color: '#EF4444' }]}>Cancelar</Text>
+            </Pressable>
           </View>
         </View>
       )}
@@ -262,6 +301,17 @@ export default function VisitExecutionScreen({ route, navigation }) {
       {estadoVisita === 'completada' && (
         <View style={styles.actionWrap}>
           <Text style={styles.completedText}>Visita Completada ✅</Text>
+          <Pressable
+            style={[styles.button, { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB', marginTop: 40 }]}
+            onPress={cancelarVisita}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#EF4444" />
+            ) : (
+              <Text style={[styles.buttonText, { color: '#EF4444' }]}>Anular Visita (Borrar Progreso)</Text>
+            )}
+          </Pressable>
         </View>
       )}
 

@@ -11,6 +11,7 @@ export const endpoints = {
   iniciarVisita: (visitaId) => `/visitas/${visitaId}/iniciar`,
   iniciarVisitaLibre: '/visitas/libre',
   finalizarVisita: (visitaId) => `/visitas/${visitaId}/finalizar`,
+  cancelarVisita: (visitaId) => `/visitas/${visitaId}/cancelar`,
   gps: '/gps/',
   gpsUsuario: (idUsuario) => `/usuarios/${idUsuario}/gps`,
   gpsBatch: (idUsuario) => `/usuarios/${idUsuario}/gps/batch`,

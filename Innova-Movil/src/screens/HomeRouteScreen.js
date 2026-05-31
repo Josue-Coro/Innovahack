@@ -84,7 +84,8 @@ export default function HomeRouteScreen({ navigation }) {
   const [sendingGpsOnce, setSendingGpsOnce] = useState(false);
   const [gpsOk, setGpsOk] = useState(null);
   const [gpsIntervalActive, setGpsIntervalActive] = useState(false);
-  const [puntosExtra, setPuntosExtra] = useState([]);
+  const [modalPdvs, setModalPdvs] = useState([]);
+  const [modalPdvsVisible, setModalPdvsVisible] = useState(false);
   const [viewMode, setViewMode] = useState('list');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -121,21 +122,13 @@ export default function HomeRouteScreen({ navigation }) {
       ]);
 
       const pdvs = pdvsRes?.data ?? [];
-      const fakePoints = pdvs.map((p, index) => ({
-        id_ruta_punto: `temp-${p.id_pdv}`,
-        orden: index + 1,
-        estado: 'pendiente',
-        pdv: p,
-        id_pdv: p.id_pdv
-      }));
-      setPuntosExtra(fakePoints);
 
       const rutaResumen = pickReponedorRoute(rutasRes?.data ?? [], idReponedor);
 
       if (!rutaResumen?.id_ruta) {
         setRuta(null);
         setVisitasByPdv({});
-        if (!fakePoints.length) {
+        if (!pdvs.length) {
           setError('No tienes ruta ni puntos de venta asignados hoy.');
         }
         return;
@@ -217,14 +210,8 @@ export default function HomeRouteScreen({ navigation }) {
       if (!pdvs.length) {
         setError('No tienes puntos de venta asignados.');
       } else {
-        const fakePoints = pdvs.map((p, index) => ({
-          id_ruta_punto: `temp-${p.id_pdv}`,
-          orden: index + 1,
-          estado: 'pendiente',
-          pdv: p,
-          id_pdv: p.id_pdv
-        }));
-        setPuntosExtra(fakePoints);
+        setModalPdvs(pdvs);
+        setModalPdvsVisible(true);
       }
     } catch (e) {
       setError(getApiError(e, 'Error al cargar PDVs asignados'));
@@ -326,16 +313,7 @@ export default function HomeRouteScreen({ navigation }) {
   const points = rawPoints.filter(p => {
     if (!searchQuery) return true;
     const lowerQ = searchQuery.toLowerCase();
-    const codigo = p.pdv?.codigo_pdv?.toLowerCase() || '';
-    const nombre = p.pdv?.nombre_pdv?.toLowerCase() || '';
-    return codigo.includes(lowerQ) || nombre.includes(lowerQ);
-  });
-
-  const rawExtra = puntosExtra ?? [];
-  const filteredExtra = rawExtra.filter(p => {
-    if (!searchQuery) return true;
-    const lowerQ = searchQuery.toLowerCase();
-    const codigo = p.pdv?.codigo_pdv?.toLowerCase() || '';
+    const codigo = p.pdv?.codigo_gv?.toLowerCase() || '';
     const nombre = p.pdv?.nombre_pdv?.toLowerCase() || '';
     return codigo.includes(lowerQ) || nombre.includes(lowerQ);
   });
@@ -351,7 +329,7 @@ export default function HomeRouteScreen({ navigation }) {
     return R * c;
   }
 
-  let allPoints = [...points, ...filteredExtra];
+  let allPoints = [...points];
 
   if (currentLocation) {
     allPoints.forEach(p => {
@@ -422,11 +400,31 @@ export default function HomeRouteScreen({ navigation }) {
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: themeColors.text }]}>Hola, {usuario?.nombre ?? 'Reponedor'}</Text>
-          <Text style={[styles.headerSub, { color: themeColors.textMuted }]}>
-            {ruta
-              ? `Ruta #${ruta.id_ruta} · Progreso: ${allPoints.filter(p => p.estado === 'completada').length}/${allPoints.length}`
-              : 'Sin ruta activa'}
-          </Text>
+          {ruta ? (
+            <View style={{ marginTop: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={{ color: themeColors.textMuted, fontSize: 13, fontWeight: '600' }}>
+                  Ruta #{ruta.id_ruta}
+                </Text>
+                <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700' }}>
+                  {allPoints.length > 0 ? Math.round((allPoints.filter(p => p.estado === 'completada').length / allPoints.length) * 100) : 0}% Completado
+                </Text>
+              </View>
+              <View style={{ height: 8, backgroundColor: isDarkMode ? '#374151' : '#E5E7EB', borderRadius: 4, overflow: 'hidden' }}>
+                <View style={{ 
+                  height: '100%', 
+                  backgroundColor: '#10B981', 
+                  width: `${allPoints.length > 0 ? (allPoints.filter(p => p.estado === 'completada').length / allPoints.length) * 100 : 0}%`,
+                  borderRadius: 4
+                }} />
+              </View>
+              <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 6 }}>
+                Has visitado {allPoints.filter(p => p.estado === 'completada').length} de {allPoints.length} puntos de venta hoy.
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.headerSub, { color: themeColors.textMuted, marginTop: 4 }]}>Sin ruta activa para hoy</Text>
+          )}
         </View>
 
         <View style={styles.actionsRow}>
@@ -614,6 +612,51 @@ export default function HomeRouteScreen({ navigation }) {
           </View>
         )}
       </View>
+
+      {/* Modal para Mis PDVs */}
+      <Modal visible={modalPdvsVisible} animationType="slide" transparent={true}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: themeColors.bg, height: '80%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: themeColors.text }}>Mis PDVs Asignados ({modalPdvs.length})</Text>
+              <Pressable onPress={() => setModalPdvsVisible(false)} style={{ padding: 4 }}>
+                <Ionicons name="close-circle" size={28} color={themeColors.textMuted} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={modalPdvs}
+              keyExtractor={p => p.id_pdv.toString()}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              renderItem={({ item }) => (
+                <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: isDarkMode ? '#374151' : '#E5E7EB', marginBottom: 12, padding: 16 }]}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: themeColors.text }}>
+                    {item.codigo_gv ? `${item.codigo_gv} · ` : ''}{item.nombre_pdv}
+                  </Text>
+                  <Text style={{ color: themeColors.textMuted, fontSize: 13, marginTop: 6 }}>
+                    <Ionicons name="location-outline" size={12} /> {item.direccion || 'Sin dirección'}
+                  </Text>
+                  <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 4 }}>
+                    <Ionicons name="call-outline" size={12} /> {item.telefono || 'Sin teléfono'}
+                  </Text>
+                  <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'].map(dia => {
+                      if (item[`atiende_${dia}`]) {
+                        return (
+                          <View key={dia} style={{ backgroundColor: '#3B82F622', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 10, color: '#3B82F6', textTransform: 'capitalize', fontWeight: '600' }}>{dia.slice(0,3)}</Text>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })}
+                  </View>
+                </View>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
