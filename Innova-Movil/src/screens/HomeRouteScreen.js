@@ -16,7 +16,10 @@ import {
   UIManager,
   Image,
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapLibreGL from '@maplibre/maplibre-react-native';
+
+MapLibreGL.setAccessToken(null);
+
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -498,29 +501,61 @@ export default function HomeRouteScreen({ navigation }) {
 
             {viewMode === 'map' ? (
               <View style={[styles.mapContainer, { borderColor: isDarkMode ? '#374151' : '#E5E7EB' }]}>
-                <MapView
+                <MapLibreGL.MapView
                   style={styles.map}
-                  showsUserLocation={true}
-                  showsMyLocationButton={true}
-                  initialRegion={{
-                    latitude: allPoints[0]?.pdv?.latitud ?? -16.5,
-                    longitude: allPoints[0]?.pdv?.longitud ?? -68.15,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
+                  styleJSON={JSON.stringify({
+                    version: 8,
+                    sources: {
+                      osm: {
+                        type: 'raster',
+                        tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '&copy; OpenStreetMap Contributors',
+                        maxzoom: 19
+                      }
+                    },
+                    layers: [
+                      {
+                        id: 'osm',
+                        type: 'raster',
+                        source: 'osm'
+                      }
+                    ]
+                  })}
+                  logoEnabled={false}
+                  compassEnabled={true}
                 >
+                  <MapLibreGL.Camera
+                    zoomLevel={13}
+                    centerCoordinate={[
+                      allPoints[0]?.pdv?.longitud ?? -68.15,
+                      allPoints[0]?.pdv?.latitud ?? -16.5,
+                    ]}
+                  />
+                  <MapLibreGL.UserLocation visible={true} showsUserHeadingIndicator={true} />
+                  
                   {allPoints.map((item, index) => {
                     const pdv = item?.pdv;
                     if (!pdv?.latitud || !pdv?.longitud) return null;
+                    const key = String(item?.id_ruta_punto ?? item?.id_pdv ?? index);
                     return (
-                      <Marker
-                        key={item?.id_ruta_punto ?? item?.id_pdv ?? index}
-                        coordinate={{ latitude: pdv.latitud, longitude: pdv.longitud }}
+                      <MapLibreGL.PointAnnotation
+                        key={key}
+                        id={`marker-${key}`}
+                        coordinate={[pdv.longitud, pdv.latitud]}
                         title={pdv.nombre_pdv}
-                        description={pdv.direccion}
-                      />
+                      >
+                        <View style={{
+                          backgroundColor: item?.estado === 'completada' ? '#10B981' : '#F59E0B',
+                          width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#fff',
+                          alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <Text style={{color: '#fff', fontSize: 10, fontWeight: 'bold'}}>{item.orden || (index + 1)}</Text>
+                        </View>
+                      </MapLibreGL.PointAnnotation>
                     );
                   })}
+                  
                   {(() => {
                     let polyObj = null;
                     try {
@@ -534,20 +569,33 @@ export default function HomeRouteScreen({ navigation }) {
                     }
 
                     if (polyObj && polyObj.coordinates && Array.isArray(polyObj.coordinates)) {
+                      const geoJSON = {
+                        type: 'FeatureCollection',
+                        features: [{
+                          type: 'Feature',
+                          geometry: {
+                            type: 'LineString',
+                            coordinates: polyObj.coordinates // MapLibre usa [lon, lat]
+                          }
+                        }]
+                      };
                       return (
-                        <Polyline
-                          coordinates={polyObj.coordinates.map(coord => ({
-                            latitude: coord[1],
-                            longitude: coord[0]
-                          }))}
-                          strokeColor="#3B82F6"
-                          strokeWidth={5}
-                        />
+                        <MapLibreGL.ShapeSource id="routeSource" shape={geoJSON}>
+                          <MapLibreGL.LineLayer
+                            id="routeLine"
+                            style={{
+                              lineColor: '#3B82F6',
+                              lineWidth: 5,
+                              lineCap: 'round',
+                              lineJoin: 'round',
+                            }}
+                          />
+                        </MapLibreGL.ShapeSource>
                       );
                     }
                     return null;
                   })()}
-                </MapView>
+                </MapLibreGL.MapView>
               </View>
             ) : (
               <FlatList
