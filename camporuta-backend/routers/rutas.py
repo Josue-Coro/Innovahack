@@ -151,6 +151,12 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
         if ruta_existente:
             puntos_ids = [p.id_ruta_punto for p in db.query(models.RutaPunto).filter_by(id_ruta=ruta_existente.id_ruta).all()]
             if puntos_ids:
+                visitas = db.query(models.Visita.id_visita).filter(models.Visita.id_ruta_punto.in_(puntos_ids)).all()
+                visitas_ids = [v[0] for v in visitas]
+                if visitas_ids:
+                    db.query(models.Entrega).filter(models.Entrega.id_visita.in_(visitas_ids)).delete(synchronize_session=False)
+                    db.query(models.VisitaTarea).filter(models.VisitaTarea.id_visita.in_(visitas_ids)).delete(synchronize_session=False)
+                
                 db.query(models.Visita).filter(models.Visita.id_ruta_punto.in_(puntos_ids)).delete(synchronize_session=False)
             db.query(models.RutaPunto).filter_by(id_ruta=ruta_existente.id_ruta).delete(synchronize_session=False)
             db.delete(ruta_existente)
