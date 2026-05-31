@@ -27,6 +27,29 @@ def calcular_distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+def _generar_tareas_visita(db: Session, visita: models.Visita):
+    # Verificamos si ya existen tareas (por si acaso)
+    existentes = db.query(models.VisitaTarea).filter(models.VisitaTarea.id_visita == visita.id_visita).count()
+    if existentes > 0:
+        return
+    
+    pdv = db.query(models.PuntoDeVenta).filter(models.PuntoDeVenta.id_pdv == visita.id_pdv).first()
+    if not pdv or not pdv.id_categoria:
+        return
+    
+    micro_tareas = db.query(models.MicroTarea).filter(
+        models.MicroTarea.id_categoria == pdv.id_categoria,
+        models.MicroTarea.activo == True
+    ).all()
+    
+    for mt in micro_tareas:
+        vt = models.VisitaTarea(
+            id_visita=visita.id_visita,
+            id_micro_tarea=mt.id_micro_tarea
+        )
+        db.add(vt)
+    db.commit()
+
 router = APIRouter(
     prefix="/visitas",
     tags=["Visitas"]
@@ -128,6 +151,8 @@ async def crear_visita_libre(visita: schemas.VisitaCreate, db: Session = Depends
     db.add(db_visita)
     db.commit()
     db.refresh(db_visita)
+    
+    _generar_tareas_visita(db, db_visita)
     
     # Broadcast creation
     await manager.broadcast({
@@ -341,6 +366,8 @@ async def iniciar_visita(
     db.add(visita)
     db.commit()
     db.refresh(visita)
+    
+    _generar_tareas_visita(db, visita)
 
     # Notificar WebSocket
     await manager.broadcast({
@@ -411,3 +438,29 @@ async def finalizar_visita(
     })
 
     return visita
+
+@router.get("/{visita_id}/tareas", response_model=List[schemas.VisitaTareaConDetalle])
+async def obtener_tareas_visita(visita_id: int, db: Session = Depends(get_db)):
+    visita = db.query(models.Visita).filter(models.Visita.id_visita == visita_id).first()
+    if not visita:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+    
+    from sqlalchemy.orm import joinedload
+    tareas = db.query(models.VisitaTarea).options(joinedload(models.VisitaTarea.micro_tarea)).filter(models.VisitaTarea.id_visita == visita_id).all()
+    return tareas
+
+@router.post("/{visita_id}/tareas/batch", response_model=List[schemas.VisitaTarea])
+async def batch_completar_tareas(visita_id: int, ids_tareas: List[int], db: Session = Depends(get_db)):
+    tareas = db.query(models.VisitaTarea).filter(
+        models.VisitaTarea.id_visita == visita_id,
+        models.VisitaTarea.id_visita_tarea.in_(ids_tareas)
+    ).all()
+    
+    for tarea in tareas:
+        tarea.completada = True
+        tarea.hora_fin = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+        if not tarea.hora_inicio:
+            tarea.hora_inicio = tarea.hora_fin
+            
+    db.commit()
+    return db.query(models.VisitaTarea).filter(models.VisitaTarea.id_visita == visita_id).all()

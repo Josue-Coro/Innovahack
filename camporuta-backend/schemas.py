@@ -291,6 +291,12 @@ class VisitaTarea(VisitaTareaBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class MicroTareaBase(BaseModel):
+    nombre: str
+
+class VisitaTareaConDetalle(VisitaTarea):
+    micro_tarea: Optional[MicroTareaBase] = None
+
 
 # --- INCIDENCIA SCHEMAS ---
 class IncidenciaBase(BaseModel):
