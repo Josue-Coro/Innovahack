@@ -270,6 +270,9 @@ class Visita(VisitaBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class CheckInRequest(BaseModel):
+    latitud_actual: float
+    longitud_actual: float
 
 # --- VISITA TAREA SCHEMAS ---
 class VisitaTareaBase(BaseModel):
