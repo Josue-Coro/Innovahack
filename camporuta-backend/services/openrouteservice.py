@@ -30,9 +30,12 @@ async def get_directions(coordinates: List[List[float]]) -> Tuple[Dict[str, Any]
         'Authorization': ORS_API_KEY,
         'Content-Type': 'application/json; charset=utf-8'
     }
+    
+    # ORS tiene un límite de 50 puntos de ruta (waypoints) en su API pública gratuita
+    coordinates_ors = coordinates[:50]
+    
     body = {
-        "coordinates": coordinates,
-        "instructions": False
+        "coordinates": coordinates_ors
     }
 
     try:
