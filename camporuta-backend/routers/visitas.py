@@ -474,10 +474,12 @@ async def cancelar_visita(
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
         
-    if visita.estado != "en_curso":
-        raise HTTPException(status_code=400, detail="Solo se pueden cancelar visitas que están en curso.")
+    if visita.estado not in ["en_curso", "completada"]:
+        raise HTTPException(status_code=400, detail="Solo se pueden cancelar visitas en curso o completadas.")
 
     visita.hora_llegada = None
+    visita.hora_salida = None
+    visita.duracion_real_min = None
     visita.estado = "pendiente"
 
     # Sincronizar estado en RutaPunto
@@ -489,6 +491,13 @@ async def cancelar_visita(
             
     # Reset tasks
     db.query(models.VisitaTarea).filter(models.VisitaTarea.id_visita == visita_id).update({"completada": False, "hora_inicio": None, "hora_fin": None})
+
+    # Borrar entregas asociadas a la visita
+    entregas = db.query(models.Entrega).filter(models.Entrega.id_visita == visita_id).all()
+    if entregas:
+        ids_entregas = [e.id_entrega for e in entregas]
+        db.query(models.EntregaProducto).filter(models.EntregaProducto.id_entrega.in_(ids_entregas)).delete(synchronize_session=False)
+        db.query(models.Entrega).filter(models.Entrega.id_visita == visita_id).delete(synchronize_session=False)
 
     db.add(visita)
     db.commit()
