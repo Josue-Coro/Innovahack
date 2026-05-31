@@ -42,14 +42,17 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
 
     # 3. Actualizar la última posición en perfiles_reponedor
     perfil = db.query(models.PerfilReponedor).filter(models.PerfilReponedor.id_usuario == id_usuario).first()
-    if perfil:
-        perfil.lat_actual = gps_data.latitud
-        perfil.lon_actual = gps_data.longitud
-        if gps_data.nivel_bateria is not None:
-            perfil.bateria_actual = gps_data.nivel_bateria
-        perfil.online = True
-        perfil.ultima_conexion = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+    if not perfil:
+        perfil = models.PerfilReponedor(id_usuario=id_usuario)
         db.add(perfil)
+        
+    perfil.lat_actual = gps_data.latitud
+    perfil.lon_actual = gps_data.longitud
+    if gps_data.nivel_bateria is not None:
+        perfil.bateria_actual = gps_data.nivel_bateria
+    perfil.online = True
+    perfil.ultima_conexion = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+    db.add(perfil)
     
     db.commit()
 
@@ -69,23 +72,25 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
 
 @router.get("/reponedores/ultimas-ubicaciones", response_model=list[schemas.ReponedorUltimaUbicacion])
 async def get_ultimas_ubicaciones(db: Session = Depends(get_db)):
-    # Trae los perfiles de los reponedores junto con su nombre de usuario
+    # Trae TODOS los usuarios reponedores (rol 3) y hace un LEFT JOIN con su perfil
     resultados = db.query(
-        models.PerfilReponedor, models.Usuario.nombre
-    ).join(
-        models.Usuario, models.Usuario.id_usuario == models.PerfilReponedor.id_usuario
+        models.Usuario, models.PerfilReponedor
+    ).outerjoin(
+        models.PerfilReponedor, models.Usuario.id_usuario == models.PerfilReponedor.id_usuario
+    ).filter(
+        models.Usuario.id_rol == 3
     ).all()
 
     respuesta = []
-    for perfil, nombre in resultados:
+    for usuario, perfil in resultados:
         respuesta.append({
-            "id_usuario": perfil.id_usuario,
-            "nombre": nombre,
-            "lat_actual": perfil.lat_actual,
-            "lon_actual": perfil.lon_actual,
-            "bateria_actual": perfil.bateria_actual,
-            "online": perfil.online,
-            "ultima_conexion": perfil.ultima_conexion
+            "id_usuario": usuario.id_usuario,
+            "nombre": usuario.nombre,
+            "lat_actual": perfil.lat_actual if perfil else None,
+            "lon_actual": perfil.lon_actual if perfil else None,
+            "bateria_actual": perfil.bateria_actual if perfil else None,
+            "online": perfil.online if perfil else False,
+            "ultima_conexion": perfil.ultima_conexion if perfil else None
         })
     return respuesta
 
