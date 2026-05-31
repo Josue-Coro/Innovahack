@@ -184,8 +184,8 @@ export default function VisitExecutionScreen({ route, navigation }) {
     return (
       <View style={styles.productRow}>
         <View style={styles.productInfo}>
-          <Text style={styles.productName}>{item.nombre}</Text>
-          <Text style={styles.productStock}>Stock disp: {item.stock_disponible}</Text>
+          <Text style={styles.productName}>{item.nombre_producto}</Text>
+          <Text style={styles.productStock}>Stock disp: {item.stock_actual}</Text>
         </View>
         
         <View style={styles.counterWrap}>
