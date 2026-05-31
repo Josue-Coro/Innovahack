@@ -465,6 +465,47 @@ async def finalizar_visita(
 
     return visita
 
+@router.post("/{visita_id}/cancelar", response_model=schemas.Visita)
+async def cancelar_visita(
+    visita_id: int,
+    db: Session = Depends(get_db)
+):
+    visita = db.query(models.Visita).filter(models.Visita.id_visita == visita_id).first()
+    if not visita:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+        
+    if visita.estado != "en_curso":
+        raise HTTPException(status_code=400, detail="Solo se pueden cancelar visitas que están en curso.")
+
+    visita.hora_llegada = None
+    visita.estado = "pendiente"
+
+    # Sincronizar estado en RutaPunto
+    if visita.id_ruta_punto:
+        rp = db.query(models.RutaPunto).filter(models.RutaPunto.id_ruta_punto == visita.id_ruta_punto).first()
+        if rp:
+            rp.estado = "pendiente"
+            db.add(rp)
+            
+    # Reset tasks
+    db.query(models.VisitaTarea).filter(models.VisitaTarea.id_visita == visita_id).update({"completada": False, "hora_inicio": None, "hora_fin": None})
+
+    db.add(visita)
+    db.commit()
+    db.refresh(visita)
+
+    # Notificar WebSocket
+    await manager.broadcast({
+        "type": "VISITA_ACTUALIZADA",
+        "payload": {
+            "id_visita": visita.id_visita, 
+            "id_ruta_punto": visita.id_ruta_punto, 
+            "estado": visita.estado
+        }
+    })
+
+    return visita
+
 @router.get("/{visita_id}/tareas", response_model=List[schemas.VisitaTareaConDetalle])
 async def obtener_tareas_visita(visita_id: int, db: Session = Depends(get_db)):
     visita = db.query(models.Visita).filter(models.Visita.id_visita == visita_id).first()
