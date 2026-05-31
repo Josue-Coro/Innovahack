@@ -441,3 +441,60 @@ class AuditLog(Base):
     creado_en = Column(DateTime, default=datetime.utcnow)
 
     usuario = relationship("Usuario")
+
+
+class CategoriaProducto(Base):
+    __tablename__ = "categorias_productos"
+
+    id_categoria_producto = Column(Integer, primary_key=True)
+    nombre = Column(String(100), unique=True, nullable=False)
+    activo = Column(Boolean, default=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
+    productos = relationship("Producto", back_populates="categoria")
+
+
+class Producto(Base):
+    __tablename__ = "productos"
+
+    id_producto = Column(Integer, primary_key=True)
+    id_categoria_producto = Column(Integer, ForeignKey("categorias_productos.id_categoria_producto"))
+    nombre_producto = Column(String(150), nullable=False)
+    sku = Column(String(50), unique=True)
+    precio_sugerido = Column(Numeric(10, 2))
+    stock_actual = Column(Integer, default=0, nullable=False)
+    activo = Column(Boolean, default=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    actualizado_en = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    categoria = relationship("CategoriaProducto", back_populates="productos")
+    entregas = relationship("EntregaProducto", back_populates="producto")
+
+
+class Entrega(Base):
+    __tablename__ = "entregas"
+
+    id_entrega = Column(Integer, primary_key=True)
+    id_visita = Column(Integer, ForeignKey("visitas.id_visita"), nullable=False)
+    id_reponedor = Column(Integer, ForeignKey("usuarios.id_usuario"), nullable=False)
+    id_pdv = Column(Integer, ForeignKey("puntos_de_venta.id_pdv"), nullable=False)
+    fecha_hora_entrega = Column(DateTime, default=datetime.utcnow)
+    notas = Column(String)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
+    visita = relationship("Visita")
+    reponedor = relationship("Usuario")
+    pdv = relationship("PuntoDeVenta")
+    detalles = relationship("EntregaProducto", back_populates="entrega", cascade="all, delete-orphan")
+
+
+class EntregaProducto(Base):
+    __tablename__ = "entrega_productos"
+
+    id_entrega_producto = Column(Integer, primary_key=True)
+    id_entrega = Column(Integer, ForeignKey("entregas.id_entrega", ondelete="CASCADE"), nullable=False)
+    id_producto = Column(Integer, ForeignKey("productos.id_producto"), nullable=False)
+    cantidad_entregada = Column(Integer, nullable=False)
+
+    entrega = relationship("Entrega", back_populates="detalles")
+    producto = relationship("Producto", back_populates="entregas")

@@ -119,6 +119,18 @@ def eliminar_pdv(pdv_id: int, db: Session = Depends(get_db)):
     db.commit()
     return None
 
+@router.post("/pdvs/auto-asignar")
+def auto_asignar_pdvs_endpoint(db: Session = Depends(get_db)):
+    """
+    Asigna automáticamente todos los PDVs que no tengan reponedor asignado.
+    Utiliza un algoritmo geográfico Greedy que además balancea la carga de días
+    según la frecuencia semanal de cada PDV.
+    """
+    from services.asignacion import auto_asignar_pdvs
+    resultado = auto_asignar_pdvs(db)
+    if "error" in resultado:
+        raise HTTPException(status_code=400, detail=resultado["error"])
+    return resultado
 
 # ============================================================
 # MICRO TAREAS

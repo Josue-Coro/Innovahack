@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import routers
-from routers import websocket, visitas, rutas, dashboard, roles, geografia, usuarios, catalogo, gestion, auth, gps
+from routers import websocket, visitas, rutas, dashboard, roles, geografia, usuarios, catalogo, gestion, auth, gps, productos, entregas
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,6 +55,8 @@ app.include_router(geografia.router)
 app.include_router(usuarios.router)
 app.include_router(catalogo.router)
 app.include_router(gestion.router)
+app.include_router(productos.router)
+app.include_router(entregas.router)
 
 @app.get("/")
 def read_root():

@@ -112,7 +112,7 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
     Genera las rutas del día actual para todos los reponedores.
     Basado en los PDVs asignados que atienden hoy.
     """
-    from datetime import datetime, timedelta, timezone, date
+    from datetime import datetime, timedelta, timezone, date, time
     from services.openrouteservice import get_directions
     
     BOLIVIA_TZ = timezone(timedelta(hours=-4))
@@ -165,57 +165,84 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
         db.add(nueva_ruta)
         db.flush() # Para obtener id_ruta
         
-        # Crear los puntos iniciales sin orden
-        puntos = []
-        for pdv in pdvs_hoy:
-            punto = models.RutaPunto(
+        # Obtener ubicación actual del reponedor (si existe)
+        perfil = db.query(models.PerfilReponedor).filter_by(id_usuario=rep.id_usuario).first()
+        lat_inicio = float(perfil.lat_actual) if perfil and perfil.lat_actual is not None else None
+        lon_inicio = float(perfil.lon_actual) if perfil and perfil.lon_actual is not None else None
+
+        # Asignar PDVs a la nueva ruta
+        for idx, pdv in enumerate(pdvs_hoy):
+            ruta_punto = models.RutaPunto(
                 id_ruta=nueva_ruta.id_ruta,
                 id_pdv=pdv.id_pdv,
-                orden=0 # Se asignará luego
+                orden=idx + 1
             )
-            db.add(punto)
-            puntos.append(punto)
+            db.add(ruta_punto)
+        
         db.flush()
         
-        # 1. Optimizar orden con TSP (Euclidiano rápido)
-        nueva_ruta = optimizar_ruta_db(nueva_ruta, db)
+        # Optimizar ruta pasando la ubicación del reponedor
+        nueva_ruta = optimizar_ruta_db(nueva_ruta, db, lat_inicio, lon_inicio)
         
-        # 2. Consultar ORS para polyline y ETAs
+        # Generar polyline y tiempos con OpenRouteService
         puntos_ordenados = sorted(nueva_ruta.ruta_puntos, key=lambda x: x.orden)
         coordenadas = [[float(rp.pdv.longitud), float(rp.pdv.latitud)] for rp in puntos_ordenados if rp.pdv]
         
-        if len(coordenadas) > 1:
-            polyline, dist, dur, duraciones = await get_directions(coordenadas)
+        # Si tenemos la ubicación del reponedor, insertarla al inicio de la ruta ORS
+        if lat_inicio is not None and lon_inicio is not None:
+            coordenadas.insert(0, [lon_inicio, lat_inicio])
             
-            if polyline:
-                nueva_ruta.polyline_json = polyline
-                nueva_ruta.distancia_km_estimada = dist
-                nueva_ruta.duracion_min_estimada = int(dur)
-                
-                # Calcular ETAs (Asumimos inicio a las 08:00 AM)
-                hora_actual_eta = datetime.combine(hoy.date(), datetime.strptime("08:00", "%H:%M").time())
-                
-                for idx, rp in enumerate(puntos_ordenados):
+        polyline, dist, dur, duraciones = await get_directions(coordenadas)
+        
+        nueva_ruta.polyline_json = polyline
+        nueva_ruta.distancia_km_estimada = dist
+        nueva_ruta.duracion_min_estimada = int(dur)
+        
+        # Asignar ETA y crear Visitas
+        # Asumimos que inicia a las 8:00 AM (esto puede venir de la DB o config)
+        hora_inicio_ruta = datetime.combine(hoy, time(8, 0))
+        hora_actual_eta = hora_inicio_ruta
+        
+        for idx, rp in enumerate(puntos_ordenados):
+            if duraciones and len(duraciones) > 0:
+                if lat_inicio is not None and lon_inicio is not None:
+                    # Como insertamos la ubicación del usuario, los duraciones tienen un tramo extra al inicio
+                    minutos_viaje = duraciones[idx] if idx < len(duraciones) else 5.0
+                    
+                    if idx > 0:
+                        pdv_anterior = puntos_ordenados[idx-1].pdv
+                        tiempo_visita = pdv_anterior.tiempo_visita_min if pdv_anterior and pdv_anterior.tiempo_visita_min else 15
+                    else:
+                        tiempo_visita = 0 # El primer viaje desde la casa del reponedor no tiene visita previa
+                        
+                    hora_actual_eta += timedelta(minutes=minutos_viaje + tiempo_visita)
+                    rp.hora_estimada_llegada = hora_actual_eta.time()
+                else:
                     if idx == 0:
                         rp.hora_estimada_llegada = hora_actual_eta.time()
                     else:
-                        minutos_viaje = duraciones[idx - 1]
+                        # Si ORS truncó la ruta a 50 puntos, usamos 5 min como fallback para los excedentes
+                        if (idx - 1) < len(duraciones):
+                            minutos_viaje = duraciones[idx - 1]
+                        else:
+                            minutos_viaje = 5.0
+                            
                         # Sumar tiempo de viaje + tiempo de visita en el PDV anterior
                         pdv_anterior = puntos_ordenados[idx-1].pdv
                         tiempo_visita = pdv_anterior.tiempo_visita_min if pdv_anterior and pdv_anterior.tiempo_visita_min else 15
                         
                         hora_actual_eta += timedelta(minutes=minutos_viaje + tiempo_visita)
                         rp.hora_estimada_llegada = hora_actual_eta.time()
-                    
-                    # Generar la Visita en estado pendiente
-                    visita = models.Visita(
-                        id_ruta_punto=rp.id_ruta_punto,
-                        id_pdv=rp.id_pdv,
-                        id_reponedor=rep.id_usuario,
-                        estado="pendiente",
-                        fecha_programada=hoy.date()
-                    )
-                    db.add(visita)
+                        
+            # Generar la Visita en estado pendiente (fuera de los ifs de lat_inicio)
+            visita = models.Visita(
+                id_ruta_punto=rp.id_ruta_punto,
+                id_pdv=rp.id_pdv,
+                id_reponedor=rep.id_usuario,
+                estado="pendiente",
+                fecha=hoy.date()
+            )
+            db.add(visita)
         
         db.commit()
         rutas_creadas.append(nueva_ruta.id_ruta)
