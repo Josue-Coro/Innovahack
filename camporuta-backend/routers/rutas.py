@@ -199,7 +199,12 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
                     if idx == 0:
                         rp.hora_estimada_llegada = hora_actual_eta.time()
                     else:
-                        minutos_viaje = duraciones[idx - 1]
+                        # Si ORS truncó la ruta a 50 puntos, usamos 5 min como fallback para los excedentes
+                        if (idx - 1) < len(duraciones):
+                            minutos_viaje = duraciones[idx - 1]
+                        else:
+                            minutos_viaje = 5.0
+                            
                         # Sumar tiempo de viaje + tiempo de visita en el PDV anterior
                         pdv_anterior = puntos_ordenados[idx-1].pdv
                         tiempo_visita = pdv_anterior.tiempo_visita_min if pdv_anterior and pdv_anterior.tiempo_visita_min else 15
