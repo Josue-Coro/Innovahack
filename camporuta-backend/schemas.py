@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, date, time
-from typing import List, Optional
+from typing import List, Optional, Any
 
 # --- ROL SCHEMAS ---
 class RolBase(BaseModel):
@@ -180,6 +180,7 @@ class RutaBase(BaseModel):
     duracion_min_real: Optional[int] = None
     hora_inicio_real: Optional[datetime] = None
     hora_fin_real: Optional[datetime] = None
+    polyline_json: Optional[Any] = None
 
 class RutaCreate(RutaBase):
     pass
@@ -195,6 +196,7 @@ class RutaUpdate(BaseModel):
     duracion_min_real: Optional[int] = None
     hora_inicio_real: Optional[datetime] = None
     hora_fin_real: Optional[datetime] = None
+    polyline_json: Optional[Any] = None
 
 class Ruta(RutaBase):
     id_ruta: int

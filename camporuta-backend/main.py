@@ -11,11 +11,17 @@ from routers import websocket, visitas, rutas, dashboard, roles, geografia, usua
 async def lifespan(app: FastAPI):
     # Startup: launch background task for reponedor inactivity monitoring
     task = asyncio.create_task(websocket.check_reponedor_timeouts())
+    
+    # Startup: launch daily cron for route generation
+    from services.cron import run_daily_cron
+    cron_task = asyncio.create_task(run_daily_cron())
+    
     yield
     # Shutdown: cancel background task
     task.cancel()
+    cron_task.cancel()
     try:
-        await task
+        await asyncio.gather(task, cron_task, return_exceptions=True)
     except asyncio.CancelledError:
         pass
 

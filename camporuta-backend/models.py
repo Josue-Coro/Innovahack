@@ -212,6 +212,7 @@ class Ruta(Base):
     duracion_min_real = Column(Integer)
     hora_inicio_real = Column(DateTime)
     hora_fin_real = Column(DateTime)
+    polyline_json = Column(JSON, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
     actualizado_en = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

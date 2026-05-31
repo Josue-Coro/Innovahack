@@ -105,3 +105,105 @@ async def optimizar_ruta(ruta_id: int, db: Session = Depends(get_db)):
     })
     
     return db_ruta
+
+@router.post("/generar-dia", status_code=status.HTTP_201_CREATED)
+async def generar_rutas_dia(db: Session = Depends(get_db)):
+    """
+    Genera las rutas del día actual para todos los reponedores.
+    Basado en los PDVs asignados que atienden hoy.
+    """
+    from datetime import datetime, timedelta, timezone, date
+    from services.openrouteservice import get_directions
+    
+    BOLIVIA_TZ = timezone(timedelta(hours=-4))
+    hoy = datetime.now(BOLIVIA_TZ)
+    dia_semana = hoy.weekday() # 0 = Lunes, 6 = Domingo
+    
+    dias_attr = [
+        "atiende_lunes", "atiende_martes", "atiende_miercoles", 
+        "atiende_jueves", "atiende_viernes", "atiende_sabado", "atiende_domingo"
+    ]
+    attr_hoy = dias_attr[dia_semana]
+
+    # Encontrar reponedores activos
+    reponedores = db.query(models.Usuario).filter(models.Usuario.id_rol == 3, models.Usuario.activo == True).all()
+    
+    rutas_creadas = []
+    
+    for rep in reponedores:
+        # Buscar PDVs asignados a este reponedor que se deben visitar hoy
+        filtro_pdv = {
+            "id_reponedor_asignado": rep.id_usuario,
+            "activo": True,
+            attr_hoy: True
+        }
+        pdvs_hoy = db.query(models.PuntoDeVenta).filter_by(**filtro_pdv).all()
+        
+        if not pdvs_hoy:
+            continue
+            
+        # Crear la ruta vacía
+        nueva_ruta = models.Ruta(
+            id_reponedor=rep.id_usuario,
+            fecha=hoy.date(),
+            estado="pendiente"
+        )
+        db.add(nueva_ruta)
+        db.flush() # Para obtener id_ruta
+        
+        # Crear los puntos iniciales sin orden
+        puntos = []
+        for pdv in pdvs_hoy:
+            punto = models.RutaPunto(
+                id_ruta=nueva_ruta.id_ruta,
+                id_pdv=pdv.id_pdv,
+                orden=0 # Se asignará luego
+            )
+            db.add(punto)
+            puntos.append(punto)
+        db.flush()
+        
+        # 1. Optimizar orden con TSP (Euclidiano rápido)
+        nueva_ruta = optimizar_ruta_db(nueva_ruta, db)
+        
+        # 2. Consultar ORS para polyline y ETAs
+        puntos_ordenados = sorted(nueva_ruta.ruta_puntos, key=lambda x: x.orden)
+        coordenadas = [[float(rp.pdv.longitud), float(rp.pdv.latitud)] for rp in puntos_ordenados if rp.pdv]
+        
+        if len(coordenadas) > 1:
+            polyline, dist, dur, duraciones = await get_directions(coordenadas)
+            
+            if polyline:
+                nueva_ruta.polyline_json = polyline
+                nueva_ruta.distancia_km_estimada = dist
+                nueva_ruta.duracion_min_estimada = int(dur)
+                
+                # Calcular ETAs (Asumimos inicio a las 08:00 AM)
+                hora_actual_eta = datetime.combine(hoy.date(), datetime.strptime("08:00", "%H:%M").time())
+                
+                for idx, rp in enumerate(puntos_ordenados):
+                    if idx == 0:
+                        rp.hora_estimada_llegada = hora_actual_eta.time()
+                    else:
+                        minutos_viaje = duraciones[idx - 1]
+                        # Sumar tiempo de viaje + tiempo de visita en el PDV anterior
+                        pdv_anterior = puntos_ordenados[idx-1].pdv
+                        tiempo_visita = pdv_anterior.tiempo_visita_min if pdv_anterior and pdv_anterior.tiempo_visita_min else 15
+                        
+                        hora_actual_eta += timedelta(minutes=minutos_viaje + tiempo_visita)
+                        rp.hora_estimada_llegada = hora_actual_eta.time()
+                    
+                    # Generar la Visita en estado pendiente
+                    visita = models.Visita(
+                        id_ruta=nueva_ruta.id_ruta,
+                        id_pdv=rp.id_pdv,
+                        id_reponedor=rep.id_usuario,
+                        estado="pendiente",
+                        fecha_programada=hoy.date()
+                    )
+                    db.add(visita)
+        
+        db.commit()
+        rutas_creadas.append(nueva_ruta.id_ruta)
+        
+    return {"message": f"Se generaron {len(rutas_creadas)} rutas para hoy.", "rutas_generadas": rutas_creadas}
