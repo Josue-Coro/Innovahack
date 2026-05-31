@@ -37,7 +37,7 @@ async def get_directions(coordinates: List[List[float]]) -> Tuple[Dict[str, Any]
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=body, headers=headers, timeout=15.0)
+            response = await client.post(url, json=body, headers=headers, timeout=60.0)
             response.raise_for_status()
             
             data = response.json()

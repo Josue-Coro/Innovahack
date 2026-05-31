@@ -142,6 +142,20 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
         if not pdvs_hoy:
             continue
             
+        # Eliminar ruta existente para hoy si existe (para sobreescribir)
+        ruta_existente = db.query(models.Ruta).filter_by(
+            id_reponedor=rep.id_usuario, 
+            fecha=hoy.date()
+        ).first()
+        
+        if ruta_existente:
+            puntos_ids = [p.id_ruta_punto for p in db.query(models.RutaPunto).filter_by(id_ruta=ruta_existente.id_ruta).all()]
+            if puntos_ids:
+                db.query(models.Visita).filter(models.Visita.id_ruta_punto.in_(puntos_ids)).delete(synchronize_session=False)
+            db.query(models.RutaPunto).filter_by(id_ruta=ruta_existente.id_ruta).delete(synchronize_session=False)
+            db.delete(ruta_existente)
+            db.flush()
+            
         # Crear la ruta vacía
         nueva_ruta = models.Ruta(
             id_reponedor=rep.id_usuario,
@@ -195,7 +209,7 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
                     
                     # Generar la Visita en estado pendiente
                     visita = models.Visita(
-                        id_ruta=nueva_ruta.id_ruta,
+                        id_ruta_punto=rp.id_ruta_punto,
                         id_pdv=rp.id_pdv,
                         id_reponedor=rep.id_usuario,
                         estado="pendiente",
