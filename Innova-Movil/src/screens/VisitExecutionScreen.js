@@ -273,38 +273,63 @@ export default function VisitExecutionScreen({ route, navigation }) {
             ListHeaderComponent={
               <View style={{ padding: 16 }}>
                 <Text style={styles.sectionTitle}>Checklist de Visita</Text>
+                
+                {/* Fixed Task for Delivery */}
+                <View style={{ marginBottom: 12 }}>
+                  <Pressable 
+                    style={styles.taskRow} 
+                    onPress={() => setShowDeliveryUI(!showDeliveryUI)}
+                  >
+                    <View style={styles.taskIconWrap}>
+                      <Ionicons 
+                        name={entregado ? "checkmark-circle" : "cube-outline"} 
+                        size={24} 
+                        color={entregado ? "#10B981" : "#3B82F6"} 
+                      />
+                    </View>
+                    <View style={styles.taskInfo}>
+                      <Text style={styles.taskName}>Entregar productos</Text>
+                      <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+                        Toca para abrir catálogo de entrega
+                      </Text>
+                    </View>
+                  </Pressable>
+                  
+                  {showDeliveryUI && (
+                    <View style={styles.deliveryInlineContainer}>
+                      {loadingProductos ? (
+                        <ActivityIndicator style={{marginTop: 10}} />
+                      ) : (
+                        <>
+                          {productos.map(p => renderProducto({ item: p, key: String(p.id_producto) }))}
+                          <Pressable 
+                            style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
+                            onPress={confirmarEntrega}
+                            disabled={submitting || entregado}
+                          >
+                            <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
+                          </Pressable>
+                        </>
+                      )}
+                    </View>
+                  )}
+                </View>
+
+                {/* API Tasks */}
                 {loadingTareas ? (
                   <ActivityIndicator style={{marginTop: 20}} />
                 ) : (
                   <>
                     {tareas.length === 0 ? (
-                      <Text style={{ color: '#9CA3AF', marginBottom: 15 }}>No hay tareas asignadas para este punto.</Text>
+                      <Text style={{ color: '#9CA3AF', marginBottom: 15 }}>No hay otras tareas asignadas para este punto.</Text>
                     ) : (
-                      tareas.map(t => renderTarea({ item: t }))
+                      tareas.map(t => renderTarea({ item: t, key: String(t.id_visita_tarea) }))
                     )}
                   </>
                 )}
-                
-                <View style={{ height: 1, backgroundColor: '#E5E7EB', marginVertical: 20 }} />
-                
-                <Text style={styles.sectionTitle}>Productos a entregar</Text>
-                {loadingProductos ? (
-                  <ActivityIndicator style={{marginTop: 10}} />
-                ) : (
-                  <View style={styles.deliveryContainer}>
-                    {productos.map(p => renderProducto({ item: p, key: String(p.id_producto) }))}
-                    <Pressable 
-                      style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
-                      onPress={confirmarEntrega}
-                      disabled={submitting || entregado}
-                    >
-                      <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
-                    </Pressable>
-                  </View>
-                )}
               </View>
             }
-            data={[]} // Solo usamos la lista para scroll usando ListHeaderComponent
+            data={[]}
             renderItem={() => null}
           />
 
