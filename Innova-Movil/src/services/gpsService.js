@@ -29,7 +29,7 @@ export async function registrarPosicionGps(idReponedor) {
     velocidad_kmh: velocidadKmh,
   };
 
-  const res = await api.post(endpoints.gps, body);
+  const res = await api.post(endpoints.gpsUsuario(idReponedor), body);
   return { body, response: res?.data };
 }
 
