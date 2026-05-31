@@ -110,13 +110,29 @@ export default function HomeRouteScreen({ navigation }) {
     }
     setError(null);
     try {
-      const rutasRes = await api.get(endpoints.rutas);
+      const [rutasRes, pdvsRes] = await Promise.all([
+        api.get(endpoints.rutas),
+        api.get(`${endpoints.pdvs}?id_reponedor_asignado=${idReponedor}`)
+      ]);
+
+      const pdvs = pdvsRes?.data ?? [];
+      const fakePoints = pdvs.map((p, index) => ({
+        id_ruta_punto: `temp-${p.id_pdv}`,
+        orden: index + 1,
+        estado: 'pendiente',
+        pdv: p,
+        id_pdv: p.id_pdv
+      }));
+      setPuntosExtra(fakePoints);
+
       const rutaResumen = pickReponedorRoute(rutasRes?.data ?? [], idReponedor);
 
       if (!rutaResumen?.id_ruta) {
         setRuta(null);
         setVisitasByPdv({});
-        setError('No tienes ruta asignada para hoy');
+        if (!fakePoints.length) {
+          setError('No tienes ruta ni puntos de venta asignados hoy.');
+        }
         return;
       }
 
@@ -134,7 +150,7 @@ export default function HomeRouteScreen({ navigation }) {
       }
       setVisitasByPdv(map);
     } catch (e) {
-      setError(getApiError(e, 'Error al cargar la ruta'));
+      setError(getApiError(e, 'Error al cargar la ruta o PDVs'));
     }
   }, [idReponedor]);
 
@@ -389,17 +405,17 @@ export default function HomeRouteScreen({ navigation }) {
             </Text>
           </Pressable>
           
-          {ruta?.id_ruta ? (
+          {ruta?.id_ruta && (
             <Pressable style={styles.actionBtn} onPress={optimizeRoute} disabled={optimizing}>
               {optimizing ? <ActivityIndicator size="small" color="#8B5CF6" /> : <Ionicons name="git-network-outline" size={18} color="#8B5CF6" />}
               <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Optimizar</Text>
             </Pressable>
-          ) : (
-            <Pressable style={styles.actionBtn} onPress={fetchMisPdvs} disabled={loading}>
-               <Ionicons name="list" size={18} color="#3B82F6" />
-               <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Mis PDVs</Text>
-            </Pressable>
           )}
+
+          <Pressable style={styles.actionBtn} onPress={fetchMisPdvs} disabled={loading}>
+             <Ionicons name="list" size={18} color="#3B82F6" />
+             <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Mis PDVs</Text>
+          </Pressable>
         </View>
 
         {gpsOk ? (
