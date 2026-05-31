@@ -130,20 +130,6 @@ async def get_historial_gps(
         models.PosicionGPS.timestamp <= fin_dt
     ).order_by(models.PosicionGPS.timestamp.asc()).all()
 
-    def format_bolivia_date(dt: datetime) -> str:
-        meses = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-        
-        dia_semana = dias[dt.weekday()]
-        dia = dt.day
-        mes = meses[dt.month]
-        anio = dt.year
-        
-        hora_12 = dt.strftime("%I:%M").lstrip("0")
-        am_pm = "p.m." if dt.hour >= 12 else "a.m."
-        
-        return f"{hora_12} {am_pm} {dia_semana}, {dia} de {mes} de {anio} (GMT-4) Hora en Bolivia"
-
     resultado = []
     for p in puntos:
         resultado.append({
@@ -151,8 +137,7 @@ async def get_historial_gps(
             "longitud": p.longitud,
             "velocidad_kmh": p.velocidad_kmh,
             "nivel_bateria": p.nivel_bateria,
-            "timestamp": p.timestamp.replace(tzinfo=BOLIVIA_TZ),
-            "fecha_formateada": format_bolivia_date(p.timestamp)
+            "timestamp": p.timestamp
         })
 
     return resultado
