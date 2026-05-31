@@ -739,7 +739,7 @@ class CategoriaProducto(CategoriaProductoBase):
 
 
 class ProductoBase(BaseModel):
-    id_categoria_producto: int
+    id_categoria_producto: Optional[int] = None
     nombre_producto: str
     sku: Optional[str] = None
     precio_sugerido: Optional[float] = None

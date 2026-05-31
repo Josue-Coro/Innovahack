@@ -395,14 +395,14 @@ async def finalizar_visita(
     if visita.estado != "en_curso":
         raise HTTPException(status_code=400, detail="La visita no está en progreso, por lo que no se puede finalizar.")
 
-    # Validar distancia de salida (50 metros)
+    # Validar distancia de salida (100 metros)
     pdv = db.query(models.PuntoDeVenta).filter(models.PuntoDeVenta.id_pdv == visita.id_pdv).first()
     if pdv:
         distancia = calcular_distancia_metros(req.latitud_actual, req.longitud_actual, pdv.latitud, pdv.longitud)
-        if distancia > 50:
+        if distancia > 100:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Debes estar en la tienda para finalizar la visita. Estás a {int(distancia)} metros (Max: 50m)."
+                detail=f"Debes estar cerca de la tienda para finalizar la visita. Estás a {int(distancia)} metros (Max: 100m)."
             )
 
     hora_actual = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
