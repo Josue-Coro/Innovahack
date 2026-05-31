@@ -408,13 +408,8 @@ async def finalizar_visita(
     hora_actual = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
     visita.hora_salida = hora_actual
     visita.estado = "completada"
-
-    # Calcular duración exacta
-    if visita.hora_llegada:
-        # Calcular los minutos transcurridos
-        diferencia = hora_actual - visita.hora_llegada
-        minutos = int(diferencia.total_seconds() / 60)
-        visita.duracion_real_min = minutos
+    
+    # La duración real es calculada automáticamente por la base de datos (Columna Generada)
         
     # Sincronizar estado en RutaPunto
     if visita.id_ruta_punto:
@@ -479,7 +474,6 @@ async def cancelar_visita(
 
     visita.hora_llegada = None
     visita.hora_salida = None
-    visita.duracion_real_min = None
     visita.estado = "pendiente"
 
     # Sincronizar estado en RutaPunto
