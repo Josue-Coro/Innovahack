@@ -112,7 +112,7 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
     Genera las rutas del día actual para todos los reponedores.
     Basado en los PDVs asignados que atienden hoy.
     """
-    from datetime import datetime, timedelta, timezone, date
+    from datetime import datetime, timedelta, timezone, date, time
     from services.openrouteservice import get_directions
     
     BOLIVIA_TZ = timezone(timedelta(hours=-4))
