@@ -81,28 +81,16 @@ async def get_ultimas_ubicaciones(db: Session = Depends(get_db)):
         models.Usuario.id_rol == 3
     ).all()
 
-    def format_bolivia_date(dt):
-        if not dt:
-            return None
-        meses = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
-                 "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        dias  = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-        hora_12 = dt.strftime("%I:%M").lstrip("0") or "12:00"
-        am_pm   = "p.m." if dt.hour >= 12 else "a.m."
-        return f"{hora_12} {am_pm} {dias[dt.weekday()]}, {dt.day} de {meses[dt.month]} de {dt.year} (GMT-4) Hora en Bolivia"
-
     respuesta = []
     for usuario, perfil in resultados:
-        uc = perfil.ultima_conexion if perfil else None
         respuesta.append({
             "id_usuario": usuario.id_usuario,
             "nombre": usuario.nombre,
-            "lat_actual": float(perfil.lat_actual) if perfil and perfil.lat_actual is not None else None,
-            "lon_actual": float(perfil.lon_actual) if perfil and perfil.lon_actual is not None else None,
+            "lat_actual": perfil.lat_actual if perfil else None,
+            "lon_actual": perfil.lon_actual if perfil else None,
             "bateria_actual": perfil.bateria_actual if perfil else None,
             "online": perfil.online if perfil else False,
-            "ultima_conexion": uc.replace(tzinfo=BOLIVIA_TZ) if uc else None,
-            "ultima_conexion_formateada": format_bolivia_date(uc),
+            "ultima_conexion": perfil.ultima_conexion if perfil else None
         })
     return respuesta
 

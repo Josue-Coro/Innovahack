@@ -703,8 +703,7 @@ class ReponedorUltimaUbicacion(BaseModel):
     lon_actual: Optional[float] = None
     bateria_actual: Optional[int] = None
     online: bool
-    ultima_conexion: Optional[datetime] = None         # datetime con offset -04:00
-    ultima_conexion_formateada: Optional[str] = None   # texto legible Hora Bolivia
+    ultima_conexion: Optional[datetime] = None
 
     class Config:
         from_attributes = True
