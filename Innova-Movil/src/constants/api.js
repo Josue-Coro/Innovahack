@@ -17,6 +17,8 @@ export const endpoints = {
   pdvs: '/pdvs/',
   productos: '/productos/',
   entregas: '/entregas/',
+  visitaTareas: (visitaId) => `/visitas/${visitaId}/tareas`,
+  visitaTareasBatch: (visitaId) => `/visitas/${visitaId}/tareas/batch`,
   generarRutaDia: '/rutas/generar-dia',
   wsReponedor: (idReponedor) => {
     const base = API_BASE_URL.replace(/^http/, 'ws');

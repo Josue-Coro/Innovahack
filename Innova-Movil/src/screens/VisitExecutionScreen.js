@@ -18,17 +18,34 @@ export default function VisitExecutionScreen({ route, navigation }) {
   const [cart, setCart] = useState({});
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [entregado, setEntregado] = useState(false); // Flag para obligar a enviar antes del checkout
+  
+  const [tareas, setTareas] = useState([]);
+  const [loadingTareas, setLoadingTareas] = useState(false);
+  const [showDeliveryUI, setShowDeliveryUI] = useState(false);
 
   const codigo = useMemo(() => pdv?.codigo_gv ?? '—', [pdv]);
   const nombre = useMemo(() => pdv?.nombre_pdv ?? 'PDV', [pdv]);
   const direccion = useMemo(() => pdv?.direccion ?? '—', [pdv]);
 
-  // Cargar productos si estamos en progreso
+  // Cargar tareas y productos si estamos en progreso
   useEffect(() => {
-    if (estadoVisita === 'en_curso') {
+    if (estadoVisita === 'en_curso' && visitaId) {
+      fetchTareas();
       fetchProductos();
     }
-  }, [estadoVisita]);
+  }, [estadoVisita, visitaId]);
+
+  async function fetchTareas() {
+    setLoadingTareas(true);
+    try {
+      const res = await api.get(endpoints.visitaTareas(visitaId));
+      setTareas(res?.data ?? []);
+    } catch (e) {
+      console.log('Error cargando tareas', e);
+    } finally {
+      setLoadingTareas(false);
+    }
+  }
 
   async function fetchProductos() {
     setLoadingProductos(true);
@@ -145,6 +162,12 @@ export default function VisitExecutionScreen({ route, navigation }) {
         return;
       }
 
+      // Guardar tareas completadas en batch
+      const completedTaskIds = tareas.filter(t => t.completada).map(t => t.id_visita_tarea);
+      if (completedTaskIds.length > 0) {
+        await api.post(endpoints.visitaTareasBatch(visitaId), completedTaskIds);
+      }
+
       await api.post(endpoints.finalizarVisita(visitaId), payload);
       Alert.alert('Check-Out Exitoso', 'Visita completada correctamente.');
       setEstadoVisita('completada');
@@ -174,6 +197,70 @@ export default function VisitExecutionScreen({ route, navigation }) {
             <Ionicons name="add" size={20} color="#10B981" />
           </Pressable>
         </View>
+      </View>
+    );
+  };
+
+  const toggleTarea = (idTarea) => {
+    setTareas(prev => prev.map(t => t.id_visita_tarea === idTarea ? { ...t, completada: !t.completada } : t));
+  };
+
+  const renderTarea = ({ item }) => {
+    const nombre = item?.micro_tarea?.nombre ?? 'Tarea Desconocida';
+    const isReponer = nombre.toLowerCase().includes('reponer') || nombre.toLowerCase().includes('entrega');
+    
+    return (
+      <View style={{ marginBottom: 12 }}>
+        <Pressable 
+          style={[styles.taskRow, item.completada && styles.taskRowCompleted]} 
+          onPress={() => {
+            if (isReponer) {
+              setShowDeliveryUI(!showDeliveryUI);
+            } else {
+              toggleTarea(item.id_visita_tarea);
+            }
+          }}
+        >
+          <View style={styles.taskIconWrap}>
+            <Ionicons 
+              name={item.completada ? "checkmark-circle" : "ellipse-outline"} 
+              size={24} 
+              color={item.completada ? "#10B981" : "#9CA3AF"} 
+            />
+          </View>
+          <View style={styles.taskInfo}>
+            <Text style={[styles.taskName, item.completada && styles.taskNameCompleted]}>{nombre}</Text>
+            {isReponer && (
+              <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+                Toca para abrir catálogo de entrega
+              </Text>
+            )}
+          </View>
+          {isReponer && (
+             <Pressable style={styles.taskCheckBtn} onPress={() => toggleTarea(item.id_visita_tarea)}>
+               <Ionicons name="checkmark" size={18} color="#fff" />
+             </Pressable>
+          )}
+        </Pressable>
+        
+        {isReponer && showDeliveryUI && (
+          <View style={styles.deliveryInlineContainer}>
+             {loadingProductos ? (
+               <ActivityIndicator style={{marginTop: 10}} />
+             ) : (
+               <>
+                 {productos.map(p => renderProducto({ item: p }))}
+                 <Pressable 
+                   style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
+                   onPress={confirmarEntrega}
+                   disabled={submitting || entregado}
+                 >
+                   <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
+                 </Pressable>
+               </>
+             )}
+          </View>
+        )}
       </View>
     );
   };
@@ -217,29 +304,22 @@ export default function VisitExecutionScreen({ route, navigation }) {
       )}
 
       {estadoVisita === 'en_curso' && (
-        <View style={styles.deliveryContainer}>
-          <Text style={styles.sectionTitle}>Productos a entregar</Text>
+        <View style={{ flex: 1, padding: 16 }}>
+          <Text style={styles.sectionTitle}>Checklist de Visita</Text>
           
-          {loadingProductos ? (
+          {loadingTareas ? (
             <ActivityIndicator style={{marginTop: 20}} />
           ) : (
             <FlatList
-              data={productos}
-              keyExtractor={p => String(p.id_producto)}
-              renderItem={renderProducto}
+              data={tareas}
+              keyExtractor={t => String(t.id_visita_tarea)}
+              renderItem={renderTarea}
               contentContainerStyle={{ paddingBottom: 20 }}
+              ListEmptyComponent={<Text style={{ color: '#9CA3AF' }}>No hay tareas asignadas para este punto.</Text>}
             />
           )}
 
           <View style={styles.bottomActions}>
-            <Pressable 
-              style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : null]} 
-              onPress={confirmarEntrega}
-              disabled={submitting || entregado}
-            >
-              <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
-            </Pressable>
-
             <Pressable
               style={[styles.button, styles.buttonEnd, submitting ? styles.buttonDisabled : null]}
               onPress={checkOut}
@@ -248,7 +328,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
               {submitting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.buttonText}>Check-Out y Salir</Text>
+                <Text style={styles.buttonText}>Finalizar Visita (Check-Out)</Text>
               )}
             </Pressable>
           </View>
@@ -281,6 +361,48 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   label: { color: '#6B7280', fontSize: 13, fontWeight: '600' },
   value: { fontSize: 15, fontWeight: '800', color: '#111827', flex: 1, textAlign: 'right' },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  taskRowCompleted: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  taskIconWrap: {
+    marginRight: 12,
+  },
+  taskInfo: {
+    flex: 1,
+  },
+  taskName: {
+    fontSize: 16,
+    color: '#1F2937',
+    fontWeight: '500',
+  },
+  taskNameCompleted: {
+    color: '#6B7280',
+    textDecorationLine: 'line-through',
+  },
+  taskCheckBtn: {
+    backgroundColor: '#10B981',
+    padding: 8,
+    borderRadius: 8,
+  },
+  deliveryInlineContainer: {
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: '#E5E7EB',
+  },
   actionWrap: { flex: 1, justifyContent: 'center' },
   button: {
     height: 52,
