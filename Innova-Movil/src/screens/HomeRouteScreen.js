@@ -63,6 +63,7 @@ export default function HomeRouteScreen({ navigation }) {
   const idReponedor = getReponedorId(usuario);
   const isDarkMode = useAuthStore((s) => s.isDarkMode);
   const toggleTheme = useAuthStore((s) => s.toggleTheme);
+  const logout = useAuthStore((s) => s.logout);
   const insets = useSafeAreaInsets();
 
   const themeColors = {
