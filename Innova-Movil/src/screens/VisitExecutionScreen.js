@@ -25,7 +25,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
 
   // Cargar productos si estamos en progreso
   useEffect(() => {
-    if (estadoVisita === 'en_progreso') {
+    if (estadoVisita === 'en_curso') {
       fetchProductos();
     }
   }, [estadoVisita]);
@@ -73,7 +73,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
           id_reponedor: idReponedor,
           id_pdv: pdv.id_pdv,
           fecha: new Date().toISOString().split('T')[0],
-          estado: 'en_progreso',
+          estado: 'en_curso',
           lat_registro: payload.latitud_actual,
           lon_registro: payload.longitud_actual,
         };
@@ -85,7 +85,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
       }
       
       Alert.alert('Check-In Exitoso', 'La visita ha iniciado. Marca los productos entregados.');
-      setEstadoVisita('en_progreso');
+      setEstadoVisita('en_curso');
     } catch (e) {
       Alert.alert('No puedes iniciar', getApiError(e, 'No se pudo iniciar la visita'));
     } finally {
@@ -216,7 +216,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
         </View>
       )}
 
-      {estadoVisita === 'en_progreso' && (
+      {estadoVisita === 'en_curso' && (
         <View style={styles.deliveryContainer}>
           <Text style={styles.sectionTitle}>Productos a entregar</Text>
           

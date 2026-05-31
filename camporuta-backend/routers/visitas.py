@@ -329,13 +329,13 @@ async def iniciar_visita(
 
     # Actualizar la visita
     visita.hora_llegada = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
-    visita.estado = "en_progreso"
+    visita.estado = "en_curso"
     
     # Sincronizar estado en RutaPunto si existe
     if visita.id_ruta_punto:
         rp = db.query(models.RutaPunto).filter(models.RutaPunto.id_ruta_punto == visita.id_ruta_punto).first()
         if rp:
-            rp.estado = "en_progreso"
+            rp.estado = "en_curso"
             db.add(rp)
 
     db.add(visita)
@@ -365,7 +365,7 @@ async def finalizar_visita(
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
         
-    if visita.estado != "en_progreso":
+    if visita.estado != "en_curso":
         raise HTTPException(status_code=400, detail="La visita no está en progreso, por lo que no se puede finalizar.")
 
     # Validar distancia de salida (50 metros)
