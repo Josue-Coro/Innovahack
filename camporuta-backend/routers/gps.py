@@ -19,9 +19,14 @@ async def update_gps_location(id_usuario: int, gps_data: schemas.GPSLocationCrea
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    # Para evitar errores con celulares que envían la hora en UTC sin zona horaria (ej: 23:33 en vez de 19:33),
-    # forzaremos a que siempre se guarde la hora oficial actual del servidor en horario de Bolivia.
-    hora_guardar = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+    # Si el celular envía su propia hora, la convertimos a Bolivia
+    if gps_data.timestamp:
+        if gps_data.timestamp.tzinfo:
+            hora_guardar = gps_data.timestamp.astimezone(BOLIVIA_TZ).replace(tzinfo=None)
+        else:
+            hora_guardar = gps_data.timestamp
+    else:
+        hora_guardar = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
 
     # 2. Guardar en el histórico (posiciones_gps)
     nueva_posicion = models.PosicionGPS(
@@ -125,7 +130,7 @@ async def get_historial_gps(id_usuario: int, fecha: str = None, db: Session = De
             "longitud": p.longitud,
             "velocidad_kmh": p.velocidad_kmh,
             "nivel_bateria": p.nivel_bateria,
-            "timestamp": p.timestamp,
+            "timestamp": p.timestamp.replace(tzinfo=BOLIVIA_TZ),
             "fecha_formateada": format_bolivia_date(p.timestamp)
         })
 
