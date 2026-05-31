@@ -110,13 +110,29 @@ export default function HomeRouteScreen({ navigation }) {
     }
     setError(null);
     try {
-      const rutasRes = await api.get(endpoints.rutas);
+      const [rutasRes, pdvsRes] = await Promise.all([
+        api.get(endpoints.rutas),
+        api.get(`${endpoints.pdvs}?id_reponedor_asignado=${idReponedor}`)
+      ]);
+
+      const pdvs = pdvsRes?.data ?? [];
+      const fakePoints = pdvs.map((p, index) => ({
+        id_ruta_punto: `temp-${p.id_pdv}`,
+        orden: index + 1,
+        estado: 'pendiente',
+        pdv: p,
+        id_pdv: p.id_pdv
+      }));
+      setPuntosExtra(fakePoints);
+
       const rutaResumen = pickReponedorRoute(rutasRes?.data ?? [], idReponedor);
 
       if (!rutaResumen?.id_ruta) {
         setRuta(null);
         setVisitasByPdv({});
-        setError('No tienes ruta asignada para hoy');
+        if (!fakePoints.length) {
+          setError('No tienes ruta ni puntos de venta asignados hoy.');
+        }
         return;
       }
 
@@ -134,7 +150,7 @@ export default function HomeRouteScreen({ navigation }) {
       }
       setVisitasByPdv(map);
     } catch (e) {
-      setError(getApiError(e, 'Error al cargar la ruta'));
+      setError(getApiError(e, 'Error al cargar la ruta o PDVs'));
     }
   }, [idReponedor]);
 
@@ -187,32 +203,6 @@ export default function HomeRouteScreen({ navigation }) {
     }
   }
 
-  async function fetchMisPdvs() {
-    if (!idReponedor) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get(`${endpoints.pdvs}?id_reponedor_asignado=${idReponedor}`);
-      const pdvs = res?.data ?? [];
-      if (!pdvs.length) {
-        setError('No tienes puntos de venta asignados.');
-      } else {
-        const fakePoints = pdvs.map((p, index) => ({
-          id_ruta_punto: `temp-${p.id_pdv}`,
-          orden: index + 1,
-          estado: 'pendiente',
-          pdv: p,
-          id_pdv: p.id_pdv
-        }));
-        setPuntosExtra(fakePoints);
-      }
-    } catch (e) {
-      setError(getApiError(e, 'Error al cargar PDVs asignados'));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function enviarUnaVez() {
     if (!idReponedor) return;
     setSendingGpsOnce(true);
@@ -251,23 +241,23 @@ export default function HomeRouteScreen({ navigation }) {
         distanceInterval: 10,
         showsBackgroundLocationIndicator: true,
         foregroundService: {
-          notificationTitle: 'CampoRuta',
-          notificationBody: 'Enviando ubicación a la base central',
+          notificationTitle: 'Rastreo GPS Activo',
+          notificationBody: 'Enviando ubicaciones al dashboard...',
           notificationColor: '#3B82F6',
-        }
+        },
       });
       setGpsIntervalActive(true);
       Alert.alert('Monitoreo Activado', 'Tu posición se enviará automáticamente incluso con el teléfono bloqueado.');
     } catch (e) {
-      Alert.alert('Error', 'No se pudo iniciar el servicio en segundo plano.');
+      Alert.alert('Error', getApiError(e, 'No se pudo iniciar el monitoreo GPS'));
     }
   }
 
   function toggleMenu() {
     if (menuVisible) {
       Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: -10, duration: 150, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: -10, duration: 200, useNativeDriver: true }),
       ]).start(() => setMenuVisible(false));
     } else {
       setMenuVisible(true);
@@ -295,87 +285,104 @@ export default function HomeRouteScreen({ navigation }) {
     if (name === 'Tema') {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       toggleTheme();
-    } else if (name === 'Mi perfil') {
-      navigation.navigate('Profile');
-    } else if (name === 'Ajustes') {
-      navigation.navigate('Settings');
+      return;
     }
+    Alert.alert('Funcionalidad', `${name} está en desarrollo.`);
   }
 
+  // Mezclar ruta con PDVs adicionales
   const rawPoints = ruta?.ruta_puntos ?? [];
-  const points = rawPoints.filter(p => {
-    if (!searchQuery) return true;
-    const lowerQ = searchQuery.toLowerCase();
-    const codigo = p.pdv?.codigo_pdv?.toLowerCase() || '';
-    const nombre = p.pdv?.nombre_pdv?.toLowerCase() || '';
-    return codigo.includes(lowerQ) || nombre.includes(lowerQ);
-  });
-
   const rawExtra = puntosExtra ?? [];
-  const filteredExtra = rawExtra.filter(p => {
-    if (!searchQuery) return true;
-    const lowerQ = searchQuery.toLowerCase();
-    const codigo = p.pdv?.codigo_pdv?.toLowerCase() || '';
-    const nombre = p.pdv?.nombre_pdv?.toLowerCase() || '';
-    return codigo.includes(lowerQ) || nombre.includes(lowerQ);
-  });
+  
+  // Filtrar los extras que ya están en la ruta
+  const rutaPdvIds = new Set(rawPoints.map(p => p.id_pdv));
+  const filteredExtra = rawExtra.filter(p => !rutaPdvIds.has(p.id_pdv));
+  
+  // Buscar
+  const lowerSearch = searchQuery.toLowerCase();
+  const searchFilter = (p) => {
+    if (!lowerSearch) return true;
+    const nombre = (p?.pdv?.nombre_pdv || '').toLowerCase();
+    const codigo = (p?.pdv?.codigo_gv || '').toLowerCase();
+    const dir = (p?.pdv?.direccion || '').toLowerCase();
+    return nombre.includes(lowerSearch) || codigo.includes(lowerSearch) || dir.includes(lowerSearch);
+  };
 
-  const initials = usuario?.nombre ? usuario.nombre.substring(0, 2).toUpperCase() : 'AV';
+  const points = rawPoints.filter(searchFilter);
+  const extraPoints = filteredExtra.filter(searchFilter);
+  const allPoints = [...points, ...extraPoints];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: themeColors.bg }]}>
       
       {/* TopBar */}
-      <View style={[styles.topBar, { backgroundColor: themeColors.bg, justifyContent: 'space-between' }]}>
-        <View style={[styles.logoContainer, { backgroundColor: 'transparent' }]}>
-          <Image source={require('../../assets/logo.png')} style={{ width: 60, height: 40, resizeMode: 'contain' }} />
+      <View style={[styles.topBar, { backgroundColor: themeColors.cardBg, borderBottomColor: isDarkMode ? '#1F2937' : '#E5E7EB', justifyContent: 'space-between' }]}>
+        <View style={styles.logoContainer}>
+          <Text style={styles.logoText}>i</Text>
+        </View>
+        
+        <View style={[styles.searchContainer, { backgroundColor: themeColors.inputBg }]}>
+          <Ionicons name="search" size={18} color={themeColors.textMuted} />
+          <TextInput
+            style={[styles.searchInput, { color: themeColors.text }]}
+            placeholder="Buscar mercado..."
+            placeholderTextColor={themeColors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={themeColors.textMuted} />
+            </Pressable>
+          )}
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Pressable style={styles.bellButton}>
-            <Ionicons name="notifications-outline" size={24} color={themeColors.text} />
-            <View style={styles.bellBadge} />
-          </Pressable>
-
-          <Pressable style={styles.avatarBtn} onPress={toggleMenu}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={toggleMenu}>
+          <Ionicons name="menu" size={28} color={themeColors.text} />
+        </Pressable>
       </View>
 
       {/* Menu Overlay */}
-      {menuVisible && (
+      <Modal visible={menuVisible} transparent animationType="none" onRequestClose={toggleMenu}>
         <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
-          <Animated.View style={[styles.dropdownMenu, { top: insets.top + 60, opacity: fadeAnim, transform: [{ translateY: slideAnim }], backgroundColor: themeColors.menuBg }]}>
-            <Pressable style={styles.menuItem} onPress={() => handleFeature('Mi perfil')}>
-              <Ionicons name="person-outline" size={18} color={themeColors.textMuted} style={styles.menuIcon} />
-              <Text style={[styles.menuItemText, { color: themeColors.text }]}>Mi perfil</Text>
-            </Pressable>
-            <Pressable style={styles.menuItem} onPress={() => handleFeature('Ajustes')}>
-              <Ionicons name="settings-outline" size={18} color={themeColors.textMuted} style={styles.menuIcon} />
-              <Text style={[styles.menuItemText, { color: themeColors.text }]}>Ajustes</Text>
-            </Pressable>
-            <Pressable style={styles.menuItem} onPress={() => handleFeature('Tema')}>
-              <Ionicons name={isDarkMode ? "sunny-outline" : "moon-outline"} size={18} color={themeColors.textMuted} style={styles.menuIcon} />
-              <Text style={[styles.menuItemText, { color: themeColors.text }]}>{isDarkMode ? "Tema Claro" : "Tema Oscuro"}</Text>
-            </Pressable>
+          <Animated.View style={[styles.menuDropdown, { backgroundColor: themeColors.menuBg, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            <Text style={[styles.menuUserTitle, { color: themeColors.text }]}>{usuario?.nombre} {usuario?.apellido}</Text>
+            <Text style={[styles.menuUserSubtitle, { color: themeColors.textMuted }]}>{usuario?.email}</Text>
             <View style={[styles.menuDivider, { backgroundColor: isDarkMode ? '#374151' : '#E5E7EB' }]} />
-            <Pressable style={styles.menuItem} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={18} color="#EF4444" style={styles.menuIcon} />
+            
+            <Pressable style={({pressed}) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={() => handleFeature('Perfil')}>
+              <Ionicons name="person-outline" size={20} color={themeColors.text} />
+              <Text style={[styles.menuItemText, { color: themeColors.text }]}>Mi Perfil</Text>
+            </Pressable>
+
+            <Pressable style={({pressed}) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={() => handleFeature('Tema')}>
+              <Ionicons name={isDarkMode ? "sunny-outline" : "moon-outline"} size={20} color={themeColors.text} />
+              <Text style={[styles.menuItemText, { color: themeColors.text }]}>{isDarkMode ? 'Modo Claro' : 'Modo Oscuro'}</Text>
+            </Pressable>
+
+            <Pressable style={({pressed}) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={enviarUnaVez} disabled={sendingGpsOnce}>
+              <Ionicons name="locate-outline" size={20} color="#10B981" />
+              <Text style={[styles.menuItemText, { color: '#10B981' }]}>{sendingGpsOnce ? 'Enviando...' : 'Enviar GPS una vez'}</Text>
+            </Pressable>
+            
+            <Pressable style={({pressed}) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={generarRutasDia} disabled={loading}>
+              <Ionicons name="refresh-circle-outline" size={20} color="#8B5CF6" />
+              <Text style={[styles.menuItemText, { color: '#8B5CF6' }]}>Regenerar Ruta</Text>
+            </Pressable>
+
+            <View style={[styles.menuDivider, { backgroundColor: isDarkMode ? '#374151' : '#E5E7EB' }]} />
+            <Pressable style={({pressed}) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
               <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Cerrar Sesión</Text>
             </Pressable>
           </Animated.View>
         </Pressable>
-      )}
+      </Modal>
 
-      <View style={styles.content}>
+      <View style={styles.scrollArea}>
         <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: themeColors.text }]}>Hola, {usuario?.nombre ?? 'Reponedor'}</Text>
-          <Text style={[styles.headerSub, { color: themeColors.textMuted }]}>
-            {ruta
-              ? `Ruta #${ruta.id_ruta} · ${ruta.fecha ?? todayIso()} · ${ruta.estado ?? '—'}`
-              : 'Sin ruta activa'}
-          </Text>
+          <Text style={[styles.title, { color: themeColors.text }]}>Tu jornada de hoy</Text>
+          <Text style={[styles.subtitle, { color: themeColors.textMuted }]}>{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
         </View>
 
         <View style={styles.actionsRow}>
@@ -394,12 +401,7 @@ export default function HomeRouteScreen({ navigation }) {
               {optimizing ? <ActivityIndicator size="small" color="#8B5CF6" /> : <Ionicons name="git-network-outline" size={18} color="#8B5CF6" />}
               <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Optimizar</Text>
             </Pressable>
-          ) : (
-            <Pressable style={styles.actionBtn} onPress={fetchMisPdvs} disabled={loading}>
-               <Ionicons name="list" size={18} color="#3B82F6" />
-               <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Mis PDVs</Text>
-            </Pressable>
-          )}
+          ) : null}
         </View>
 
         {gpsOk ? (
