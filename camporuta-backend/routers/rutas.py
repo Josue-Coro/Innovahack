@@ -213,7 +213,7 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
                         id_pdv=rp.id_pdv,
                         id_reponedor=rep.id_usuario,
                         estado="pendiente",
-                        fecha_programada=hoy.date()
+                        fecha=hoy.date()
                     )
                     db.add(visita)
         
