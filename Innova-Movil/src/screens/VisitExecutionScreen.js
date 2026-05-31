@@ -12,26 +12,18 @@ export default function VisitExecutionScreen({ route, navigation }) {
   const [visitaId, setVisitaId] = useState(initialVisitaId);
   const [submitting, setSubmitting] = useState(false);
   const [estadoVisita, setEstadoVisita] = useState(initialEstado ?? 'pendiente');
-  
-  // Catálogo de productos y carrito
-  const [productos, setProductos] = useState([]);
-  const [cart, setCart] = useState({});
-  const [loadingProductos, setLoadingProductos] = useState(false);
-  const [entregado, setEntregado] = useState(false); // Flag para obligar a enviar antes del checkout
-  
   const [tareas, setTareas] = useState([]);
   const [loadingTareas, setLoadingTareas] = useState(false);
-  const [showDeliveryUI, setShowDeliveryUI] = useState(false);
+  const [entregado, setEntregado] = useState(false); // Flag para marcar como entregado
 
   const codigo = useMemo(() => pdv?.codigo_gv ?? '—', [pdv]);
   const nombre = useMemo(() => pdv?.nombre_pdv ?? 'PDV', [pdv]);
   const direccion = useMemo(() => pdv?.direccion ?? '—', [pdv]);
 
-  // Cargar tareas y productos si estamos en progreso
+  // Cargar tareas si estamos en progreso
   useEffect(() => {
     if (estadoVisita === 'en_curso' && visitaId) {
       fetchTareas();
-      fetchProductos();
     }
   }, [estadoVisita, visitaId]);
 
@@ -44,18 +36,6 @@ export default function VisitExecutionScreen({ route, navigation }) {
       console.log('Error cargando tareas', e);
     } finally {
       setLoadingTareas(false);
-    }
-  }
-
-  async function fetchProductos() {
-    setLoadingProductos(true);
-    try {
-      const res = await api.get(endpoints.productos);
-      setProductos(res?.data ?? []);
-    } catch (e) {
-      console.log('Error cargando productos', e);
-    } finally {
-      setLoadingProductos(false);
     }
   }
 
@@ -110,49 +90,13 @@ export default function VisitExecutionScreen({ route, navigation }) {
     }
   }
 
-  function modifyCart(idProducto, amount) {
-    setCart(prev => {
-      const current = prev[idProducto] || 0;
-      const next = Math.max(0, current + amount);
-      return { ...prev, [idProducto]: next };
-    });
-  }
-
-  async function confirmarEntrega() {
-    if (!visitaId) return;
-    const items = Object.entries(cart).filter(([_, cant]) => cant > 0);
-    if (items.length === 0) {
-      Alert.alert('Atención', 'No has seleccionado ningún producto para entregar.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      // Mandar una entrega por cada producto
-      for (const [id_prod, cantidad] of items) {
-        await api.post(endpoints.entregas, {
-          id_visita: visitaId,
-          id_producto: parseInt(id_prod, 10),
-          cantidad: cantidad
-        });
-      }
-      setEntregado(true);
-      Alert.alert('Éxito', 'Entrega guardada y stock descontado.');
-    } catch (e) {
-      Alert.alert('Error', getApiError(e, 'No se pudo guardar la entrega.'));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  // La lógica de productos se movió a DeliveryScreen.js
 
   async function checkOut() {
     if (!visitaId || submitting) return;
     
-    const items = Object.entries(cart).filter(([_, cant]) => cant > 0);
-    if (items.length > 0 && !entregado) {
-      Alert.alert('Falta Guardar', 'Has marcado productos para entregar pero no has presionado "Confirmar Entrega".');
-      return;
-    }
+    // No forzamos la entrega de productos, solo advertimos o lo dejamos libre.
+    // Depende del modelo de negocio, por ahora lo dejamos libre.
 
     setSubmitting(true);
     try {
@@ -179,27 +123,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
     }
   }
 
-  const renderProducto = ({ item }) => {
-    const qty = cart[item.id_producto] || 0;
-    return (
-      <View style={styles.productRow}>
-        <View style={styles.productInfo}>
-          <Text style={styles.productName}>{item.nombre_producto}</Text>
-          <Text style={styles.productStock}>Stock disp: {item.stock_actual}</Text>
-        </View>
-        
-        <View style={styles.counterWrap}>
-          <Pressable style={styles.counterBtn} onPress={() => modifyCart(item.id_producto, -1)}>
-            <Ionicons name="remove" size={20} color="#EF4444" />
-          </Pressable>
-          <Text style={styles.counterVal}>{qty}</Text>
-          <Pressable style={styles.counterBtn} onPress={() => modifyCart(item.id_producto, 1)}>
-            <Ionicons name="add" size={20} color="#10B981" />
-          </Pressable>
-        </View>
-      </View>
-    );
-  };
+  // renderProducto movido a DeliveryScreen.js
 
   const toggleTarea = (idTarea) => {
     setTareas(prev => prev.map(t => t.id_visita_tarea === idTarea ? { ...t, completada: !t.completada } : t));
@@ -278,7 +202,12 @@ export default function VisitExecutionScreen({ route, navigation }) {
                 <View style={{ marginBottom: 12 }}>
                   <Pressable 
                     style={styles.taskRow} 
-                    onPress={() => setShowDeliveryUI(!showDeliveryUI)}
+                    onPress={() => {
+                      navigation.navigate('Delivery', { 
+                        visitaId,
+                        onDeliveryComplete: () => setEntregado(true)
+                      });
+                    }}
                   >
                     <View style={styles.taskIconWrap}>
                       <Ionicons 
@@ -288,31 +217,12 @@ export default function VisitExecutionScreen({ route, navigation }) {
                       />
                     </View>
                     <View style={styles.taskInfo}>
-                      <Text style={styles.taskName}>Entregar productos</Text>
+                      <Text style={[styles.taskName, entregado && styles.taskNameCompleted]}>Entregar productos</Text>
                       <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
                         Toca para abrir catálogo de entrega
                       </Text>
                     </View>
                   </Pressable>
-                  
-                  {showDeliveryUI && (
-                    <View style={styles.deliveryInlineContainer}>
-                      {loadingProductos ? (
-                        <ActivityIndicator style={{marginTop: 10}} />
-                      ) : (
-                        <>
-                          {productos.map(p => renderProducto({ item: p, key: String(p.id_producto) }))}
-                          <Pressable 
-                            style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
-                            onPress={confirmarEntrega}
-                            disabled={submitting || entregado}
-                          >
-                            <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
-                          </Pressable>
-                        </>
-                      )}
-                    </View>
-                  )}
                 </View>
 
                 {/* API Tasks */}

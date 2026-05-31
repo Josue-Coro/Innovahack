@@ -8,6 +8,7 @@ import HomeRouteScreen from '../screens/HomeRouteScreen';
 import VisitExecutionScreen from '../screens/VisitExecutionScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DeliveryScreen from '../screens/DeliveryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -46,6 +47,11 @@ export default function RootNavigator() {
             name="VisitExecution"
             component={VisitExecutionScreen}
             options={{ title: 'Visita' }}
+          />
+          <Stack.Screen
+            name="Delivery"
+            component={DeliveryScreen}
+            options={{ title: 'Catálogo de Entrega' }}
           />
           <Stack.Screen
             name="Profile"
