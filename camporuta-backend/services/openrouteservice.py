@@ -32,8 +32,7 @@ async def get_directions(coordinates: List[List[float]]) -> Tuple[Dict[str, Any]
     }
     body = {
         "coordinates": coordinates,
-        "instructions": False, # No necesitamos instrucciones "gire a la derecha..."
-        "geometry_format": "geojson"
+        "instructions": False
     }
 
     try:
