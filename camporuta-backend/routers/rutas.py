@@ -207,3 +207,23 @@ async def generar_rutas_dia(db: Session = Depends(get_db)):
         rutas_creadas.append(nueva_ruta.id_ruta)
         
     return {"message": f"Se generaron {len(rutas_creadas)} rutas para hoy.", "rutas_generadas": rutas_creadas}
+
+@router.post("/reponedor/{id_reponedor}/auto-asignar-dias", status_code=status.HTTP_200_OK)
+async def auto_asignar_dias(id_reponedor: int, db: Session = Depends(get_db)):
+    """
+    Agrupa los PDVs de un reponedor usando K-Means y les asigna 
+    automáticamente los días de visita de Lunes a Sábado, respetando la frecuencia.
+    """
+    from services.clustering import auto_asignar_dias_reponedor
+    
+    reponedor = db.query(models.Usuario).filter(
+        models.Usuario.id_usuario == id_reponedor,
+        models.Usuario.id_rol == 3
+    ).first()
+    
+    if not reponedor:
+        raise HTTPException(status_code=404, detail="Reponedor no encontrado o no es de rol Reponedor")
+        
+    cantidad = auto_asignar_dias_reponedor(id_reponedor, db)
+    
+    return {"message": f"Se reasignaron los días para {cantidad} PDVs de forma automática y balanceada."}
