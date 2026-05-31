@@ -1,0 +1,9 @@
+- Estructura base del proyecto creada (package.json, tsconfig, App.js)
+- API client y constantes creadas
+- Zustand auth store con persistencia AsyncStorage creada
+- Servicio WebSocket + tracking de ubicación creado (expo-location + batería)
+- Navegación RootNavigator (Login/Home/VisitExecution) creada
+- Pantalla Login (POST, guardar token/usuario, redirección) creada
+- Pantalla HomeRoute (GET ruta_id=1, Optimizar Ruta con modal, lista reordenada) creada
+- Pantalla VisitExecution (POST registrar_tiempo, regresar) creada
+- Instrucciones de instalación/ejecución para Expo Go

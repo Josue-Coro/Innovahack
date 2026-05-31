@@ -1,0 +1,7 @@
+node_modules/
+.expo/
+dist/
+.expo-test-bundle/
+*.log
+.env
+.env.*

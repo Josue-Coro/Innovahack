@@ -1,0 +1,16 @@
+export const colors = {
+  gold: '#C4A574',
+  goldDark: '#A68B5B',
+  goldLight: '#E8D5B5',
+  charcoal: '#1C1C1E',
+  charcoalMid: '#2A2A2E',
+  white: '#FFFFFF',
+  offWhite: '#F8F7F5',
+  inputBg: '#F3F2EF',
+  textDark: '#1F2937',
+  textMuted: '#6B7280',
+  textLight: '#F9FAFB',
+  success: '#22C55E',
+  error: '#DC2626',
+  border: '#E5E0D8',
+};
