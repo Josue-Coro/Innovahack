@@ -95,23 +95,47 @@ async def get_ultimas_ubicaciones(db: Session = Depends(get_db)):
     return respuesta
 
 @router.get("/{id_usuario}/gps", response_model=list[schemas.GPSLocationResponse])
-async def get_historial_gps(id_usuario: int, fecha: str = None, db: Session = Depends(get_db)):
-    # Si no se envía fecha, usamos la fecha de hoy en Bolivia
-    if not fecha:
-        fecha_obj = datetime.now(BOLIVIA_TZ).date()
-    else:
-        try:
-            fecha_obj = datetime.strptime(fecha, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+async def get_historial_gps(
+    id_usuario: int,
+    fecha_inicio: str = None,
+    fecha_fin: str = None,
+    fecha: str = None,       # compatibilidad con el uso anterior
+    db: Session = Depends(get_db)
+):
+    """
+    Devuelve el historial GPS de un reponedor en un rango de fechas.
+    - fecha_inicio: YYYY-MM-DD (por defecto: hoy)
+    - fecha_fin:    YYYY-MM-DD (por defecto: misma que fecha_inicio, es decir solo ese día)
+    - fecha:        YYYY-MM-DD (parámetro antiguo, equivalente a fecha_inicio=fecha&fecha_fin=fecha)
+    """
 
-    inicio_dia = datetime.combine(fecha_obj, datetime.min.time())
-    fin_dia = inicio_dia + timedelta(days=1)
+    def parse_fecha(f: str, label: str):
+        try:
+            return datetime.strptime(f, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Formato de {label} inválido. Use YYYY-MM-DD")
+
+    hoy = datetime.now(BOLIVIA_TZ).date()
+
+    # Compatibilidad: si solo mandan 'fecha' antiguo
+    if fecha and not fecha_inicio:
+        fecha_inicio = fecha
+    if fecha and not fecha_fin:
+        fecha_fin = fecha
+
+    inicio_date = parse_fecha(fecha_inicio, "fecha_inicio") if fecha_inicio else hoy
+    fin_date    = parse_fecha(fecha_fin,    "fecha_fin")    if fecha_fin    else inicio_date
+
+    if fin_date < inicio_date:
+        raise HTTPException(status_code=400, detail="fecha_fin no puede ser anterior a fecha_inicio")
+
+    inicio_dt = datetime.combine(inicio_date, datetime.min.time())
+    fin_dt    = datetime.combine(fin_date,    datetime.max.time().replace(microsecond=0))
 
     puntos = db.query(models.PosicionGPS).filter(
         models.PosicionGPS.id_reponedor == id_usuario,
-        models.PosicionGPS.timestamp >= inicio_dia,
-        models.PosicionGPS.timestamp < fin_dia
+        models.PosicionGPS.timestamp >= inicio_dt,
+        models.PosicionGPS.timestamp <= fin_dt
     ).order_by(models.PosicionGPS.timestamp.asc()).all()
 
     def format_bolivia_date(dt: datetime) -> str:
