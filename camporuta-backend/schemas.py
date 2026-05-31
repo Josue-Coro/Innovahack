@@ -570,7 +570,10 @@ class PosicionGPSCreate(PosicionGPSBase):
 class PosicionGPS(PosicionGPSBase):
     id_posicion: int
     timestamp: datetime
-    model_config = ConfigDict(from_attributes=True)
+    fecha_formateada: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 # --- INCIDENCIA ---
 class IncidenciaCreate(IncidenciaBase):

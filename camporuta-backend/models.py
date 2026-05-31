@@ -297,6 +297,19 @@ class PosicionGPS(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     reponedor = relationship("Usuario", foreign_keys=[id_reponedor])
+    
+    @property
+    def fecha_formateada(self):
+        if not self.timestamp:
+            return None
+        meses = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+        dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+        dt = self.timestamp
+        dia_semana = dias[dt.weekday()]
+        hora_12 = dt.strftime("%I:%M").lstrip("0")
+        if not hora_12: hora_12 = "12:00"
+        am_pm = "p.m." if dt.hour >= 12 else "a.m."
+        return f"{hora_12} {am_pm} {dia_semana}, {dt.day} de {meses[dt.month]} de {dt.year} (GMT-4) Hora en Bolivia"
 
 
 class Incidencia(Base):
