@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import * as Battery from 'expo-battery';
 import api from './apiClient';
 import { endpoints } from '../constants/api';
 import { getApiError } from '../utils/apiError';
@@ -21,12 +22,21 @@ export async function registrarPosicionGps(idReponedor) {
   const velocidadKmh =
     speedMs != null && !Number.isNaN(speedMs) ? Math.round(speedMs * 3.6 * 10) / 10 : 0;
 
+  let nivelBateria = null;
+  try {
+    const level = await Battery.getBatteryLevelAsync();
+    if (level != null) nivelBateria = Math.round(level * 100);
+  } catch (e) {
+    // ignore
+  }
+
   const body = {
-    id_reponedor: idReponedor,
     latitud: pos.coords.latitude,
     longitud: pos.coords.longitude,
     precision_m: pos.coords.accuracy ?? 0,
     velocidad_kmh: velocidadKmh,
+    nivel_bateria: nivelBateria ?? undefined,
+    timestamp: new Date().toISOString(),
   };
 
   const res = await api.post(endpoints.gpsUsuario(idReponedor), body);
