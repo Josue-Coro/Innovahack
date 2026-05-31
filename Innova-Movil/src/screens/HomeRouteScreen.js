@@ -86,7 +86,7 @@ export default function HomeRouteScreen({ navigation }) {
   const [gpsIntervalActive, setGpsIntervalActive] = useState(false);
   const [puntosExtra, setPuntosExtra] = useState([]);
   const [viewMode, setViewMode] = useState('list');
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -199,16 +199,6 @@ export default function HomeRouteScreen({ navigation }) {
     setError(null);
     try {
       await api.post(endpoints.generarRutaDia);
-      
-      // Fetch the newly created route for this user to get its ID
-      const resRuta = await api.get(endpoints.rutaActiva(idReponedor));
-      const newRouteId = resRuta?.data?.id_ruta;
-      
-      if (newRouteId) {
-        // Optimize it silently
-        await api.post(endpoints.optimizarRuta(newRouteId));
-      }
-      
       await loadRoute();
     } catch (e) {
       setError(getApiError(e, 'Error al generar o optimizar rutas del día'));
@@ -262,11 +252,11 @@ export default function HomeRouteScreen({ navigation }) {
     if (gpsIntervalActive) {
       try {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
-      } catch (e) {}
+      } catch (e) { }
       setGpsIntervalActive(false);
       return;
     }
-    
+
     // Solicitamos permiso estricto para segundo plano
     const { status } = await Location.requestBackgroundPermissionsAsync();
     if (status !== 'granted') {
@@ -371,10 +361,10 @@ export default function HomeRouteScreen({ navigation }) {
     allPoints.sort((a, b) => {
       const aEstado = a.estado ?? visitasByPdv[a.id_pdv]?.estado ?? 'pendiente';
       const bEstado = b.estado ?? visitasByPdv[b.id_pdv]?.estado ?? 'pendiente';
-      
+
       const aCerca = aEstado !== 'completada' && a.distancia <= 100;
       const bCerca = bEstado !== 'completada' && b.distancia <= 100;
-      
+
       if (aCerca && !bCerca) return -1;
       if (!aCerca && bCerca) return 1;
       return (a.distancia || 999999) - (b.distancia || 999999);
@@ -385,7 +375,7 @@ export default function HomeRouteScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: themeColors.bg }]}>
-      
+
       {/* TopBar */}
       <View style={[styles.topBar, { backgroundColor: themeColors.bg, justifyContent: 'space-between' }]}>
         <View style={[styles.logoContainer, { backgroundColor: 'transparent' }]}>
@@ -449,15 +439,15 @@ export default function HomeRouteScreen({ navigation }) {
               {gpsIntervalActive ? 'Detener GPS' : 'Iniciar GPS'}
             </Text>
           </Pressable>
-          
+
           <Pressable style={styles.actionBtn} onPress={generarRutasDia} disabled={loading}>
             {loading ? <ActivityIndicator size="small" color="#10B981" /> : <Ionicons name="refresh-circle" size={18} color="#10B981" />}
             <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Generar Ruta</Text>
           </Pressable>
 
           <Pressable style={styles.actionBtn} onPress={fetchMisPdvs} disabled={loading}>
-             <Ionicons name="list" size={18} color="#3B82F6" />
-             <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Mis PDVs</Text>
+            <Ionicons name="list" size={18} color="#3B82F6" />
+            <Text style={[styles.actionBtnText, { color: themeColors.textMuted }]}>Mis PDVs</Text>
           </Pressable>
         </View>
 
@@ -492,14 +482,14 @@ export default function HomeRouteScreen({ navigation }) {
             </View>
 
             <View style={[styles.viewModeToggleRow, { backgroundColor: themeColors.inputBg }]}>
-              <Pressable 
+              <Pressable
                 style={[styles.toggleBtn, viewMode === 'list' && [styles.toggleBtnActive, { backgroundColor: isDarkMode ? '#374151' : '#FFFFFF' }]]}
                 onPress={() => setViewMode('list')}
               >
                 <Ionicons name="list" size={16} color={viewMode === 'list' ? (isDarkMode ? '#fff' : '#000') : themeColors.textMuted} />
                 <Text style={[styles.toggleBtnText, { color: themeColors.textMuted }, viewMode === 'list' && [styles.toggleBtnTextActive, { color: isDarkMode ? '#fff' : '#000' }]]}>Lista</Text>
               </Pressable>
-              <Pressable 
+              <Pressable
                 style={[styles.toggleBtn, viewMode === 'map' && [styles.toggleBtnActive, { backgroundColor: isDarkMode ? '#374151' : '#FFFFFF' }]]}
                 onPress={() => setViewMode('map')}
               >
