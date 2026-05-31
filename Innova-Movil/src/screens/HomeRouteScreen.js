@@ -10,7 +10,7 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/apiClient';
 import { useAuthStore, getReponedorId } from '../services/authStore';
@@ -324,6 +324,16 @@ export default function HomeRouteScreen({ navigation }) {
                     />
                   );
                 })}
+                {ruta?.polyline_json && ruta.polyline_json.coordinates && (
+                  <Polyline
+                    coordinates={ruta.polyline_json.coordinates.map(coord => ({
+                      latitude: coord[1],
+                      longitude: coord[0]
+                    }))}
+                    strokeColor="#2563EB"
+                    strokeWidth={4}
+                  />
+                )}
               </MapView>
             </View>
           ) : (
@@ -373,6 +383,11 @@ export default function HomeRouteScreen({ navigation }) {
                   <StatusPill estado={estado} />
                 </View>
                 <Text style={styles.cardAddress}>{direccion}</Text>
+                {item?.hora_estimada_llegada && (
+                  <Text style={{ fontSize: 13, color: '#4B5563', marginTop: 4, fontWeight: 'bold' }}>
+                    <Ionicons name="time-outline" size={14} color="#4B5563" /> Llegada estimada: {String(item.hora_estimada_llegada).slice(0, 5)}
+                  </Text>
+                )}
               </Pressable>
             );
           }}
