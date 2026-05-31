@@ -133,7 +133,7 @@ export default function VisitExecutionScreen({ route, navigation }) {
     const nombre = item?.micro_tarea?.nombre ?? 'Tarea Desconocida';
     
     return (
-      <View style={{ marginBottom: 12 }}>
+      <View key={String(item.id_visita_tarea)} style={{ marginBottom: 12 }}>
         <Pressable 
           style={[styles.taskRow, item.completada && styles.taskRowCompleted]} 
           onPress={() => toggleTarea(item.id_visita_tarea)}

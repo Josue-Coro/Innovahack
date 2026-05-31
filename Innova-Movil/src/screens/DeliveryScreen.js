@@ -95,8 +95,7 @@ export default function DeliveryScreen({ route, navigation }) {
     return result;
   }, [productos, search, cart]);
 
-  const renderProducto = ({ item }) => {
-    const qty = cart[item.id_producto] || 0;
+  const ProductoItem = React.memo(({ item, qty, onModify }) => {
     const isSelected = qty > 0;
     return (
       <View style={[styles.productRow, isSelected && styles.productRowSelected]}>
@@ -106,16 +105,20 @@ export default function DeliveryScreen({ route, navigation }) {
         </View>
         
         <View style={styles.counterWrap}>
-          <Pressable style={styles.counterBtn} onPress={() => modifyCart(item.id_producto, -1)}>
+          <Pressable style={styles.counterBtn} onPress={() => onModify(item.id_producto, -1)}>
             <Ionicons name="remove" size={20} color="#EF4444" />
           </Pressable>
           <Text style={[styles.counterVal, isSelected && { fontWeight: 'bold', color: '#10B981' }]}>{qty}</Text>
-          <Pressable style={styles.counterBtn} onPress={() => modifyCart(item.id_producto, 1)}>
+          <Pressable style={styles.counterBtn} onPress={() => onModify(item.id_producto, 1)}>
             <Ionicons name="add" size={20} color="#10B981" />
           </Pressable>
         </View>
       </View>
     );
+  }, (prev, next) => prev.qty === next.qty && prev.item.id_producto === next.item.id_producto);
+
+  const renderProducto = ({ item }) => {
+    return <ProductoItem item={item} qty={cart[item.id_producto] || 0} onModify={modifyCart} />;
   };
 
   return (
