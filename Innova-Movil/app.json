@@ -5,6 +5,12 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/logo.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.camporuta.app"
@@ -16,7 +22,10 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "CampoRuta usa tu ubicación para registrar tu ruta."
+          "locationWhenInUsePermission": "CampoRuta usa tu ubicación para registrar tu ruta.",
+          "locationAlwaysAndWhenInUsePermission": "CampoRuta usa tu ubicación para registrar el progreso de tu ruta incluso cuando la app está minimizada.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
         }
       ]
     ]

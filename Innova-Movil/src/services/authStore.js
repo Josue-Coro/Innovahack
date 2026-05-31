@@ -9,6 +9,7 @@ export const useAuthStore = create((set) => ({
   usuario: null,
   rol: null,
   isHydrated: false,
+  isDarkMode: true,
 
   hydrate: async () => {
     try {
@@ -17,8 +18,9 @@ export const useAuthStore = create((set) => ({
         const parsed = JSON.parse(raw);
         const rol = parsed.rol ?? null;
         const usuario = parsed.usuario ?? null;
+        const isDarkMode = parsed.isDarkMode ?? true;
         if (rol === 'reponedor' && parsed.token) {
-          set({ token: parsed.token, usuario, rol });
+          set({ token: parsed.token, usuario, rol, isDarkMode });
           setAuthToken(parsed.token);
         } else {
           await AsyncStorage.removeItem(STORAGE_KEY);
@@ -31,9 +33,21 @@ export const useAuthStore = create((set) => ({
   },
 
   loginSuccess: async ({ token, usuario, rol }) => {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ token, usuario, rol }));
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ token, usuario, rol, isDarkMode: true }));
     setAuthToken(token);
-    set({ token, usuario, rol });
+    set({ token, usuario, rol, isDarkMode: true });
+  },
+
+  toggleTheme: async () => {
+    const currentState = useAuthStore.getState();
+    const newDarkMode = !currentState.isDarkMode;
+    set({ isDarkMode: newDarkMode });
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      parsed.isDarkMode = newDarkMode;
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    }
   },
 
   logout: async () => {

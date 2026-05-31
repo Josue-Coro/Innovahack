@@ -6,6 +6,8 @@ import { useAuthStore } from '../services/authStore';
 import LoginScreen from '../screens/LoginScreen';
 import HomeRouteScreen from '../screens/HomeRouteScreen';
 import VisitExecutionScreen from '../screens/VisitExecutionScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -38,15 +40,22 @@ export default function RootNavigator() {
           <Stack.Screen
             name="Home"
             component={HomeRouteScreen}
-            options={{
-              title: 'Mi Ruta',
-              headerRight: () => <LogoutButton />,
-            }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="VisitExecution"
             component={VisitExecutionScreen}
             options={{ title: 'Visita' }}
+          />
+          <Stack.Screen
+            name="Profile"
+            component={ProfileScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{ headerShown: false }}
           />
         </>
       ) : (
