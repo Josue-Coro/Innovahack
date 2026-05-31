@@ -498,3 +498,15 @@ class EntregaProducto(Base):
 
     entrega = relationship("Entrega", back_populates="detalles")
     producto = relationship("Producto", back_populates="entregas")
+
+
+class MetricaPdv(Base):
+    __tablename__ = "metricas_pdv"
+
+    id_metrica = Column(Integer, primary_key=True)
+    id_pdv = Column(Integer, ForeignKey("puntos_de_venta.id_pdv"), unique=True, nullable=False)
+    tiempo_promedio_min = Column(Float, default=15.0)  # EMA
+    visitas_contadas = Column(Integer, default=0)
+    ultima_actualizacion = Column(DateTime, default=datetime.utcnow)
+
+    pdv = relationship("PuntoDeVenta", backref="metrica")

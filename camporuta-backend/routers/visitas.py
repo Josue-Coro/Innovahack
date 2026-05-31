@@ -427,6 +427,32 @@ async def finalizar_visita(
     db.commit()
     db.refresh(visita)
 
+    # --- Actualizar EMA (Promedio Móvil Exponencial) para este PDV ---
+    if visita.duracion_real_min and visita.duracion_real_min > 0 and visita.id_pdv:
+        try:
+            metrica = db.query(models.MetricaPdv).filter(
+                models.MetricaPdv.id_pdv == visita.id_pdv
+            ).first()
+            if not metrica:
+                metrica = models.MetricaPdv(
+                    id_pdv=visita.id_pdv,
+                    tiempo_promedio_min=float(visita.duracion_real_min),
+                    visitas_contadas=1
+                )
+                db.add(metrica)
+            else:
+                # Factor de suavizado EMA: alfa = 2 / (N + 1), usamos N = visitas_contadas o máximo 20
+                n = min(metrica.visitas_contadas, 20)
+                alfa = 2.0 / (n + 1)
+                metrica.tiempo_promedio_min = (alfa * visita.duracion_real_min) + ((1 - alfa) * metrica.tiempo_promedio_min)
+                metrica.visitas_contadas += 1
+                metrica.ultima_actualizacion = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+            db.commit()
+        except Exception as e_ema:
+            # No bloquear el flujo principal si el EMA falla
+            import logging
+            logging.getLogger(__name__).warning(f"EMA update failed for PDV {visita.id_pdv}: {e_ema}")
+
     # Notificar WebSocket
     await manager.broadcast({
         "type": "VISITA_COMPLETADA",
