@@ -12,6 +12,7 @@ export const endpoints = {
   finalizarVisita: (visitaId) => `/visitas/${visitaId}/finalizar`,
   gps: '/gps/',
   gpsUsuario: (idUsuario) => `/usuarios/${idUsuario}/gps`,
+  gpsBatch: (idUsuario) => `/usuarios/${idUsuario}/gps/batch`,
   pdvs: '/pdvs/',
   generarRutaDia: '/rutas/generar-dia',
   wsReponedor: (idReponedor) => {

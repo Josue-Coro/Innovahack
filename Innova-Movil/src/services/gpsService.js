@@ -5,6 +5,7 @@ import api from './apiClient';
 import { endpoints } from '../constants/api';
 import { getApiError } from '../utils/apiError';
 import { useAuthStore, getReponedorId } from './authStore';
+import { saveGpsOffline, syncOfflineGps } from './gpsSync';
 
 export const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -32,7 +33,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         if (level != null) nivelBateria = Math.round(level * 100);
       } catch (e) {}
 
-      const body = {
+      const gpsData = {
+        id_reponedor: idReponedor,
         latitud: pos.coords.latitude,
         longitud: pos.coords.longitude,
         precision_m: pos.coords.accuracy ?? 0,
@@ -41,11 +43,11 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         timestamp: new Date().toISOString(),
       };
 
-      try {
-        await api.post(endpoints.gpsUsuario(idReponedor), body);
-      } catch(e) {
-        // Fallo silencioso en background
-      }
+      // Guardar localmente
+      await saveGpsOffline(gpsData);
+      
+      // Intentar sincronizar al backend (esto mandará el lote completo incluyendo el actual)
+      await syncOfflineGps();
     }
   }
 });
@@ -76,7 +78,8 @@ export async function registrarPosicionGps(idReponedor) {
     // ignore
   }
 
-  const body = {
+  const gpsData = {
+    id_reponedor: idReponedor,
     latitud: pos.coords.latitude,
     longitud: pos.coords.longitude,
     precision_m: pos.coords.accuracy ?? 0,
@@ -85,8 +88,13 @@ export async function registrarPosicionGps(idReponedor) {
     timestamp: new Date().toISOString(),
   };
 
-  const res = await api.post(endpoints.gpsUsuario(idReponedor), body);
-  return { body, response: res?.data };
+  // Guardar localmente
+  await saveGpsOffline(gpsData);
+  
+  // Intentar sincronizar
+  await syncOfflineGps();
+
+  return { body: gpsData, response: { message: "Guardado localmente y sincronización iniciada" } };
 }
 
 export async function registrarPosicionGpsSafe(idReponedor) {
@@ -94,6 +102,6 @@ export async function registrarPosicionGpsSafe(idReponedor) {
     const result = await registrarPosicionGps(idReponedor);
     return { ok: true, ...result };
   } catch (error) {
-    return { ok: false, message: getApiError(error, 'No se pudo enviar la posición GPS') };
+    return { ok: false, message: getApiError(error, 'No se pudo registrar la posición GPS') };
   }
 }

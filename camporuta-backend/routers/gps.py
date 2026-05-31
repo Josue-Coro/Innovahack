@@ -141,3 +141,64 @@ async def get_historial_gps(
         })
 
     return resultado
+
+
+@router.post("/{id_usuario}/gps/batch", status_code=status.HTTP_201_CREATED)
+async def update_gps_location_batch(id_usuario: int, gps_data_list: list[schemas.GPSLocationCreate], db: Session = Depends(get_db)):
+    """
+    Recibe múltiples posiciones GPS en una sola petición.
+    Ideal para sincronizar registros guardados offline en SQLite.
+    """
+    usuario = db.query(models.Usuario).filter(models.Usuario.id_usuario == id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not gps_data_list:
+        return {"message": "No hay datos para procesar"}
+
+    nuevas_posiciones = []
+    ultima_posicion = None
+
+    for gps_data in gps_data_list:
+        if gps_data.timestamp:
+            if gps_data.timestamp.tzinfo:
+                hora_guardar = gps_data.timestamp.astimezone(BOLIVIA_TZ).replace(tzinfo=None)
+            else:
+                hora_guardar = gps_data.timestamp
+        else:
+            hora_guardar = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+
+        nueva_posicion = models.PosicionGPS(
+            id_reponedor=id_usuario,
+            latitud=gps_data.latitud,
+            longitud=gps_data.longitud,
+            precision_m=gps_data.precision_m,
+            velocidad_kmh=gps_data.velocidad_kmh,
+            nivel_bateria=gps_data.nivel_bateria,
+            timestamp=hora_guardar
+        )
+        nuevas_posiciones.append(nueva_posicion)
+        
+        # Mantener un registro de la última posición recibida para actualizar el perfil
+        if ultima_posicion is None or hora_guardar > ultima_posicion.timestamp:
+            ultima_posicion = nueva_posicion
+
+    db.bulk_save_objects(nuevas_posiciones)
+
+    if ultima_posicion:
+        perfil = db.query(models.PerfilReponedor).filter(models.PerfilReponedor.id_usuario == id_usuario).first()
+        if not perfil:
+            perfil = models.PerfilReponedor(id_usuario=id_usuario)
+            db.add(perfil)
+            
+        perfil.lat_actual = ultima_posicion.latitud
+        perfil.lon_actual = ultima_posicion.longitud
+        if ultima_posicion.nivel_bateria is not None:
+            perfil.bateria_actual = ultima_posicion.nivel_bateria
+        perfil.online = True
+        perfil.ultima_conexion = datetime.now(BOLIVIA_TZ).replace(tzinfo=None)
+        db.add(perfil)
+    
+    db.commit()
+
+    return {"message": f"{len(nuevas_posiciones)} posiciones sincronizadas correctamente"}
