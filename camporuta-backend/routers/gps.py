@@ -99,14 +99,12 @@ async def get_historial_gps(
     id_usuario: int,
     fecha_inicio: str = None,
     fecha_fin: str = None,
-    fecha: str = None,       # compatibilidad con el uso anterior
     db: Session = Depends(get_db)
 ):
     """
     Devuelve el historial GPS de un reponedor en un rango de fechas.
     - fecha_inicio: YYYY-MM-DD (por defecto: hoy)
-    - fecha_fin:    YYYY-MM-DD (por defecto: misma que fecha_inicio, es decir solo ese día)
-    - fecha:        YYYY-MM-DD (parámetro antiguo, equivalente a fecha_inicio=fecha&fecha_fin=fecha)
+    - fecha_fin:    YYYY-MM-DD (por defecto: mismo día que fecha_inicio)
     """
 
     def parse_fecha(f: str, label: str):
@@ -116,12 +114,6 @@ async def get_historial_gps(
             raise HTTPException(status_code=400, detail=f"Formato de {label} inválido. Use YYYY-MM-DD")
 
     hoy = datetime.now(BOLIVIA_TZ).date()
-
-    # Compatibilidad: si solo mandan 'fecha' antiguo
-    if fecha and not fecha_inicio:
-        fecha_inicio = fecha
-    if fecha and not fecha_fin:
-        fecha_fin = fecha
 
     inicio_date = parse_fecha(fecha_inicio, "fecha_inicio") if fecha_inicio else hoy
     fin_date    = parse_fecha(fecha_fin,    "fecha_fin")    if fecha_fin    else inicio_date
