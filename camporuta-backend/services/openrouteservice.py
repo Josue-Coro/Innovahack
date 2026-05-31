@@ -3,8 +3,11 @@ import httpx
 import logging
 from typing import List, Dict, Any, Tuple
 
+from dotenv import load_dotenv
+
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 ORS_API_KEY = os.getenv("ORS_API_KEY")
 
 async def get_directions(coordinates: List[List[float]]) -> Tuple[Dict[str, Any], float, float, List[float]]:

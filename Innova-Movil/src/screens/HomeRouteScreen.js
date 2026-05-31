@@ -91,6 +91,9 @@ export default function HomeRouteScreen({ navigation }) {
       ]);
 
       const detalle = detalleRes?.data ?? null;
+      console.log('=== RUTA CARGADA ===');
+      console.log('ID Ruta:', detalle?.id_ruta);
+      console.log('Tiene Polyline?:', !!detalle?.polyline_json);
       setRuta(detalle);
 
       const map = {};
@@ -137,6 +140,23 @@ export default function HomeRouteScreen({ navigation }) {
       setError(getApiError(e, 'Error al optimizar'));
     } finally {
       setOptimizing(false);
+    }
+  }
+
+  async function generarRutasDia() {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('--- Iniciando generación de rutas en servidor ---');
+      const res = await api.post(endpoints.generarRutaDia);
+      console.log('Rutas generadas. Respuesta backend:', res?.data);
+      Alert.alert('Éxito', 'Rutas generadas. Refrescando mapa...');
+      await loadRoute();
+    } catch (e) {
+      console.log('Error al generar rutas:', e);
+      setError(getApiError(e, 'Error al generar rutas del día'));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -256,9 +276,21 @@ export default function HomeRouteScreen({ navigation }) {
       </Pressable>
 
       {!ruta?.id_ruta && (
-        <Pressable style={styles.verRutasButton} onPress={fetchMisPdvs} disabled={loading}>
-          <Text style={styles.verRutasButtonText}>Ver rutas (Mis PDVs)</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+          <Pressable style={[styles.verRutasButton, { flex: 1, marginBottom: 0 }]} onPress={fetchMisPdvs} disabled={loading}>
+            <Text style={styles.verRutasButtonText}>Ver rutas (Mis PDVs)</Text>
+          </Pressable>
+          
+          <Pressable
+            style={[styles.optimizeButton, { flex: 1, marginBottom: 0, backgroundColor: '#8B5CF6' }]}
+            onPress={generarRutasDia}
+            disabled={loading}
+          >
+            <Text style={styles.optimizeButtonText}>
+              {loading ? 'Cargando...' : 'Autogenerar ORS'}
+            </Text>
+          </Pressable>
+        </View>
       )}
 
       {gpsOk ? (
@@ -268,11 +300,27 @@ export default function HomeRouteScreen({ navigation }) {
       ) : null}
 
       {ruta?.id_ruta ? (
-        <Pressable style={styles.optimizeButton} onPress={optimizeRoute} disabled={optimizing}>
-          <Text style={styles.optimizeButtonText}>
-            {optimizing ? 'Optimizando...' : 'Optimizar ruta'}
-          </Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+          <Pressable
+            style={[styles.optimizeButton, { flex: 1, marginBottom: 0, backgroundColor: '#8B5CF6' }]}
+            onPress={generarRutasDia}
+            disabled={optimizing}
+          >
+            <Text style={styles.optimizeButtonText}>
+              {optimizing ? 'Generando...' : 'Autogenerar ORS'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.optimizeButton, { flex: 1, marginBottom: 0 }]}
+            onPress={optimizeRoute}
+            disabled={optimizing}
+          >
+            <Text style={styles.optimizeButtonText}>
+              {optimizing ? 'Optimizando...' : 'Optimizar Orden'}
+            </Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -305,6 +353,8 @@ export default function HomeRouteScreen({ navigation }) {
             <View style={styles.mapContainer}>
               <MapView
                 style={styles.map}
+                showsUserLocation={true}
+                showsMyLocationButton={true}
                 initialRegion={{
                   latitude: (ruta?.id_ruta ? points : puntosExtra)[0]?.pdv?.latitud ?? -16.5,
                   longitude: (ruta?.id_ruta ? points : puntosExtra)[0]?.pdv?.longitud ?? -68.15,
@@ -324,16 +374,32 @@ export default function HomeRouteScreen({ navigation }) {
                     />
                   );
                 })}
-                {ruta?.polyline_json && ruta.polyline_json.coordinates && (
-                  <Polyline
-                    coordinates={ruta.polyline_json.coordinates.map(coord => ({
-                      latitude: coord[1],
-                      longitude: coord[0]
-                    }))}
-                    strokeColor="#2563EB"
-                    strokeWidth={4}
-                  />
-                )}
+                {(() => {
+                  let polyObj = null;
+                  try {
+                    if (typeof ruta?.polyline_json === 'string') {
+                      polyObj = JSON.parse(ruta.polyline_json);
+                    } else {
+                      polyObj = ruta?.polyline_json;
+                    }
+                  } catch (e) {
+                    console.log('Error parsing polyline', e);
+                  }
+
+                  if (polyObj && polyObj.coordinates && Array.isArray(polyObj.coordinates)) {
+                    return (
+                      <Polyline
+                        coordinates={polyObj.coordinates.map(coord => ({
+                          latitude: coord[1],
+                          longitude: coord[0]
+                        }))}
+                        strokeColor="#2563EB"
+                        strokeWidth={5}
+                      />
+                    );
+                  }
+                  return null;
+                })()}
               </MapView>
             </View>
           ) : (

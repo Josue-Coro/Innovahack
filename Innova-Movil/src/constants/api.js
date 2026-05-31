@@ -13,6 +13,7 @@ export const endpoints = {
   gps: '/gps/',
   gpsUsuario: (idUsuario) => `/usuarios/${idUsuario}/gps`,
   pdvs: '/pdvs/',
+  generarRutaDia: '/rutas/generar-dia',
   wsReponedor: (idReponedor) => {
     const base = API_BASE_URL.replace(/^http/, 'ws');
     return `${base}/ws/reponedor/${idReponedor}`;
