@@ -233,6 +233,20 @@ export default function HomeRouteScreen({ navigation }) {
         </View>
       </Pressable>
 
+      <Pressable
+        style={[styles.gpsButton, {backgroundColor: '#059669'}]}
+        onPress={async () => {
+             await enviarUnaVez();
+             Alert.alert('Enviado', 'Tu ubicación actual ha sido enviada al servidor.');
+        }}
+        disabled={!idReponedor || sendingGps}
+      >
+        <View style={styles.gpsButtonInner}>
+          {sendingGps ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="location" size={20} color="#fff" />}
+          <Text style={styles.gpsButtonText}>Mandar ubicación (una vez)</Text>
+        </View>
+      </Pressable>
+
       {!ruta?.id_ruta && (
         <Pressable style={styles.verRutasButton} onPress={fetchMisPdvs} disabled={loading}>
           <Text style={styles.verRutasButtonText}>Ver rutas (Mis PDVs)</Text>
