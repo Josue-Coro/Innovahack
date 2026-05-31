@@ -91,11 +91,16 @@ export default function HomeRouteScreen({ navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(-10)).current;
+  const [currentLocation, setCurrentLocation] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
-        await Location.requestForegroundPermissionsAsync();
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setCurrentLocation(loc.coords);
+        }
       } catch (e) {
         console.log('Error pidiendo permisos de ubicacion', e);
       }
@@ -336,7 +341,37 @@ export default function HomeRouteScreen({ navigation }) {
     return codigo.includes(lowerQ) || nombre.includes(lowerQ);
   });
 
-  const allPoints = [...points, ...filteredExtra];
+  function getDistance(lat1, lon1, lat2, lon2) {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 999999;
+    const R = 6371e3;
+    const rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  let allPoints = [...points, ...filteredExtra];
+
+  if (currentLocation) {
+    allPoints.forEach(p => {
+      p.distancia = getDistance(currentLocation.latitude, currentLocation.longitude, p.pdv?.latitud, p.pdv?.longitud);
+    });
+    // Ordenar: primero los que no están completados y están a <= 100m, luego el resto
+    allPoints.sort((a, b) => {
+      const aEstado = a.estado ?? visitasByPdv[a.id_pdv]?.estado ?? 'pendiente';
+      const bEstado = b.estado ?? visitasByPdv[b.id_pdv]?.estado ?? 'pendiente';
+      
+      const aCerca = aEstado !== 'completada' && a.distancia <= 100;
+      const bCerca = bEstado !== 'completada' && b.distancia <= 100;
+      
+      if (aCerca && !bCerca) return -1;
+      if (!aCerca && bCerca) return 1;
+      return (a.distancia || 999999) - (b.distancia || 999999);
+    });
+  }
+
   const initials = usuario?.nombre ? usuario.nombre.substring(0, 2).toUpperCase() : 'AV';
 
   return (
@@ -554,10 +589,18 @@ export default function HomeRouteScreen({ navigation }) {
                     >
                       <View style={styles.cardTop}>
                         <Text style={[styles.cardOrder, { backgroundColor: isDarkMode ? '#374151' : '#E5E7EB', color: themeColors.text }]}>{item?.orden ?? index + 1}</Text>
-                        <Text style={[styles.cardTitle, { color: themeColors.text }]} numberOfLines={1}>
-                          {codigo ? `${codigo} · ` : ''}{nombre}
-                        </Text>
-                        <StatusPill estado={estado} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.cardTitle, { color: themeColors.text }]} numberOfLines={1}>
+                            {codigo ? `${codigo} · ` : ''}{nombre}
+                          </Text>
+                          {item.distancia != null && estado !== 'completada' && item.distancia <= 100 && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981', marginRight: 6 }} />
+                              <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '700' }}>Cerca ({Math.round(item.distancia)}m) - Puedes Iniciar</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={themeColors.textMuted} />
                       </View>
                       <Text style={[styles.cardAddress, { color: themeColors.textMuted }]}>{direccion}</Text>
                       {item?.hora_estimada_llegada && (

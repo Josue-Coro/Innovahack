@@ -320,11 +320,11 @@ async def iniciar_visita(
     # Calcular distancia
     distancia = calcular_distancia_metros(req.latitud_actual, req.longitud_actual, pdv.latitud, pdv.longitud)
     
-    # Tolerancia de 50 metros
-    if distancia > 50:
+    # Tolerancia de 100 metros
+    if distancia > 100:
         raise HTTPException(
             status_code=400, 
-            detail=f"Estás demasiado lejos de la tienda para iniciar la visita. Estás a {int(distancia)} metros. Debes estar a menos de 50m."
+            detail=f"Estás demasiado lejos del punto de venta ({distancia:.0f} metros). Acércate a menos de 100m para hacer Check-In."
         )
 
     # Actualizar la visita
