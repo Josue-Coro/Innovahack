@@ -708,3 +708,84 @@ class ReponedorUltimaUbicacion(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================
+# PRODUCTOS Y ENTREGAS SCHEMAS
+# ============================================================
+
+class CategoriaProductoBase(BaseModel):
+    nombre: str
+    activo: bool = True
+
+class CategoriaProductoCreate(CategoriaProductoBase):
+    pass
+
+class CategoriaProductoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    activo: Optional[bool] = None
+
+class CategoriaProducto(CategoriaProductoBase):
+    id_categoria_producto: int
+    creado_en: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProductoBase(BaseModel):
+    id_categoria_producto: int
+    nombre_producto: str
+    sku: Optional[str] = None
+    precio_sugerido: Optional[float] = None
+    stock_actual: int = 0
+    activo: bool = True
+
+class ProductoCreate(ProductoBase):
+    pass
+
+class ProductoUpdate(BaseModel):
+    id_categoria_producto: Optional[int] = None
+    nombre_producto: Optional[str] = None
+    sku: Optional[str] = None
+    precio_sugerido: Optional[float] = None
+    stock_actual: Optional[int] = None
+    activo: Optional[bool] = None
+
+class Producto(ProductoBase):
+    id_producto: int
+    creado_en: datetime
+    actualizado_en: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EntregaProductoBase(BaseModel):
+    id_producto: int
+    cantidad_entregada: int
+
+class EntregaProductoCreate(EntregaProductoBase):
+    pass
+
+class EntregaProducto(EntregaProductoBase):
+    id_entrega_producto: int
+    id_entrega: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EntregaBase(BaseModel):
+    id_visita: int
+    id_reponedor: int
+    id_pdv: int
+    notas: Optional[str] = None
+
+class EntregaCreate(EntregaBase):
+    productos: List[EntregaProductoCreate]
+
+class Entrega(EntregaBase):
+    id_entrega: int
+    fecha_hora_entrega: datetime
+    creado_en: datetime
+    detalles: List[EntregaProducto] = []
+
+    model_config = ConfigDict(from_attributes=True)
