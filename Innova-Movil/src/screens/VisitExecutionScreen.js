@@ -315,7 +315,25 @@ export default function VisitExecutionScreen({ route, navigation }) {
               keyExtractor={t => String(t.id_visita_tarea)}
               renderItem={renderTarea}
               contentContainerStyle={{ paddingBottom: 20 }}
-              ListEmptyComponent={<Text style={{ color: '#9CA3AF' }}>No hay tareas asignadas para este punto.</Text>}
+              ListEmptyComponent={
+                <View>
+                  <Text style={{ color: '#9CA3AF', marginBottom: 15 }}>No hay tareas asignadas para este punto. Puedes realizar entregas libremente a continuación.</Text>
+                  {loadingProductos ? (
+                    <ActivityIndicator style={{marginTop: 10}} />
+                  ) : (
+                    <View style={styles.deliveryInlineContainer}>
+                      {productos.map(p => renderProducto({ item: p }))}
+                      <Pressable 
+                        style={[styles.button, styles.buttonSave, submitting ? styles.buttonDisabled : { marginTop: 10, marginBottom: 10 }]} 
+                        onPress={confirmarEntrega}
+                        disabled={submitting || entregado}
+                      >
+                        <Text style={styles.buttonText}>{entregado ? 'Entrega Confirmada ✅' : 'Confirmar Entrega'}</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              }
             />
           )}
 
